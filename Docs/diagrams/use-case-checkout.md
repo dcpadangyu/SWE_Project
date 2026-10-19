@@ -6,6 +6,12 @@
 
 ---
 
+## Sơ đồ Use Case phân hệ Đặt hàng & Thanh toán (Task 1.3)
+
+![Sơ đồ Use Case Đặt hàng & Thanh toán](usecase-checkout.svg)
+
+---
+
 ## 1. Tác nhân (Actors)
 - **Tác nhân chính (Primary Actor):** Khách hàng (Customer) – Người dùng ứng dụng để xem menu, chọn size, topping, kiểm tra giỏ hàng và tiến hành thanh toán trực tuyến.
 - **Tác nhân hỗ trợ (Secondary Actor):** Mock Payment Service (Cổng thanh toán mô phỏng Ví điện tử / Thẻ ngân hàng).
@@ -47,81 +53,7 @@
 
 ---
 
-## 6. Sơ đồ quy trình chi tiết (Activity / Flowchart Diagram)
-
-```mermaid
-flowchart TD
-    Start(["Khách hàng bắt đầu tại Giỏ hàng"]) --> CheckCart{"Giỏ hàng có món?"}
-    CheckCart -- "Không" --> EmptyState["Hiển thị giỏ hàng trống<br>Vô hiệu hóa nút Thanh toán"]
-    CheckCart -- "Có" --> CartView["Xem giỏ hàng & Tổng tiền"]
-
-    %% Nhánh A2: Đổi size / topping / số lượng
-    CartView --> Choice{"Thao tác giỏ hàng"}
-    Choice -- "Sửa món (A2)" --> EditItem["Đổi Size / Topping / Số lượng"]
-    EditItem --> Recalc["Tính lại giá & Cập nhật giỏ hàng"]
-    Recalc --> CartView
-    Choice -- "Bấm 'Thanh toán'" --> CheckAuth{"Đã đăng nhập JWT?"}
-
-    %% Nhánh E1: Chưa đăng nhập
-    CheckAuth -- "Chưa (E1)" --> RedirectLogin["Chuyển hướng /login"]
-    RedirectLogin --> DoLogin["Đăng nhập thành công"]
-    DoLogin --> RestoreCart["Khôi phục nguyên vẹn giỏ hàng"]
-    RestoreCart --> CheckoutScreen["Màn hình Thanh toán"]
-
-    CheckAuth -- "Đã đăng nhập" --> CheckoutScreen
-
-    %% Nhánh A1: Áp dụng voucher
-    CheckoutScreen --> VoucherChoice{"Áp dụng Voucher? (A1)"}
-    VoucherChoice -- "Có nhập mã" --> CheckVoucher{"Hệ thống kiểm tra Voucher"}
-    CheckVoucher -- "Không hợp lệ / Hết hạn" --> VoucherErr["Báo lỗi voucher, giữ nguyên tổng tiền"]
-    VoucherErr --> CheckoutScreen
-    CheckVoucher -- "Hợp lệ" --> ApplyDiscount["Trừ tiền giảm giá<br>Cập nhật Tổng thanh toán"]
-    ApplyDiscount --> SelectPayMethod
-
-    VoucherChoice -- "Không / Tiếp tục" --> SelectPayMethod["Chọn phương thức: Ví điện tử / Thẻ"]
-
-    %% Nhánh A3: Đổi phương thức thanh toán
-    SelectPayMethod --> ConfirmPay["Khách bấm 'Xác nhận trả'"]
-    ConfirmPay --> GenIdempotency["Tạo Idempotency-Key & Gọi POST /orders"]
-
-    %% Nhánh E2: Kiểm tra tồn kho
-    GenIdempotency --> CheckStock{"Còn đủ tồn kho?"}
-    CheckStock -- "Hết hàng (E2)" --> StockErr["Ném lỗi 409 Không đủ tồn kho<br>Hủy giao dịch rollback"]
-    StockErr --> ReturnCart["Yêu cầu khách điều chỉnh lại giỏ hàng"]
-
-    CheckStock -- "Còn hàng" --> CreatePending["Tạo đơn trạng thái PENDING"]
-    CreatePending --> CallPaymentGateway["Gọi API Mock Payment Gateway"]
-
-    %% Xử lý thanh toán & E3, E4
-    CallPaymentGateway --> GatewayRes{"Kết quả thanh toán?"}
-    
-    %% Nhánh E3: Thanh toán thất bại
-    GatewayRes -- "Thất bại (E3)" --> PaymentFailed["Đơn sang PAYMENT_FAILED<br>Giữ nguyên giỏ hàng"]
-    PaymentFailed --> RetryChoice{"Khách chọn xử lý"}
-    RetryChoice -- "Thử lại thanh toán (E3/Retry)" --> SelectPayMethod
-    RetryChoice -- "Thất bại quá 3 lần / Hủy" --> CancelOrder["Đơn sang CANCELLED"]
-
-    %% Nhánh E4: Timeout / Mất mạng
-    GatewayRes -- "Timeout / Mất mạng (E4)" --> CheckIdempotent["Truy vấn lại theo Idempotency-Key"]
-    CheckIdempotent --> GatewayRes
-
-    %% Happy Path: Thành công
-    GatewayRes -- "Thành công" --> ProcessSuccess["Backend Transaction:<br>1. Trừ tồn kho an toàn<br>2. Chuyển đơn sang PAID<br>3. Cộng điểm Loyalty<br>4. Dọn trống giỏ hàng"]
-    ProcessSuccess --> OrderConfirm["Màn hình Xác nhận Đơn hàng:<br>Mã đơn #id, Trạng thái PAID,<br>Thông báo nhận nước tại quầy"]
-    OrderConfirm --> End(["Hoàn tất đơn hàng"])
-
-    classDef happy fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    classDef alt fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
-    classDef exception fill:#ffebee,stroke:#c62828,stroke-width:2px;
-
-    class Start,CartView,CheckoutScreen,SelectPayMethod,ConfirmPay,CreatePending,ProcessSuccess,OrderConfirm,End happy;
-    class EditItem,Recalc,ApplyDiscount,RestoreCart alt;
-    class EmptyState,RedirectLogin,VoucherErr,StockErr,ReturnCart,PaymentFailed,CancelOrder,CheckIdempotent exception;
-```
-
----
-
-## 7. Luồng thay thế (Alternate Flows)
+## 6. Luồng thay thế (Alternate Flows)
 
 ### A1 – Áp dụng voucher (rẽ nhánh từ Bước 3 hoặc Bước 4)
 - **Điều kiện kích hoạt:** Khách hàng nhập mã voucher tại màn hình Giỏ hàng / chọn phương thức thanh toán rồi bấm **"Áp dụng"**.
@@ -154,7 +86,7 @@ flowchart TD
 
 ---
 
-## 8. Luồng ngoại lệ (Exception Flows)
+## 7. Luồng ngoại lệ (Exception Flows)
 
 ### E1 – Chưa đăng nhập hoặc JWT hết hạn khi xác nhận tạo đơn (Bước 3–4)
 - **Phát hiện:** Khách hàng chưa có token, hoặc backend trả `401 Unauthorized` khi gọi `POST /orders` (token thiếu/sai/hết hạn).
@@ -189,9 +121,9 @@ flowchart TD
 
 ---
 
-## 9. Liên kết Use Case với Yêu cầu (Traceability Matrix)
+## 8. Liên kết Use Case với Yêu cầu (Traceability Matrix)
 
-### 9.1. Ánh xạ Luồng → Yêu cầu Chức năng (FR) & Phi chức năng (NFR)
+### 8.1. Ánh xạ Luồng → Yêu cầu Chức năng (FR) & Phi chức năng (NFR)
 
 | Luồng | FR liên quan (SRS) | NFR liên quan (SRS) | Tiêu chí chấp nhận |
 | :--- | :--- | :--- | :--- |
@@ -205,7 +137,9 @@ flowchart TD
 | **E4 – Mất mạng / timeout** | FR-12, FR-13, FR-15 | NFR-09, NFR-10 | Gửi lại cùng `Idempotency-Key` → nhận cùng kết quả, chỉ **1** giao dịch thanh toán thành công; đơn `PENDING` xem được ở lịch sử. |
 | **E5 – Bấm nút nhiều lần** | FR-12, FR-13 | NFR-10 | Nhiều request cùng `Idempotency-Key` → 1 đơn, 1 giao dịch duy nhất. |
 
-### 9.2. Ánh xạ Use Case tổng quát (`usecase-overview`) → Yêu cầu (FR)
+### 8.2. Ánh xạ Use Case tổng quát (`usecase-overview`) → Yêu cầu (FR)
+
+![Sơ đồ Use Case tổng quát](usecase-overview.svg)
 
 | Use Case trong Sơ đồ Tổng quát | Quan hệ | Mã Yêu cầu (SRS.md) |
 | :--- | :--- | :--- |

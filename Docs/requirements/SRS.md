@@ -55,6 +55,12 @@ BrewLite là ứng dụng đặt cà phê không dùng tiền mặt. Phạm vi n
 
 Vai trò nhân viên/quản trị viên và quyền hạn tương ứng cần được xác nhận trước khi đưa vào phạm vi chính thức.
 
+### 2.3. Sơ đồ Use Case tổng quát
+
+Hệ thống BrewLite được phân chia thành các nhóm ca sử dụng chính: Tài khoản & Xác thực, Thực đơn & Giỏ hàng, Đặt hàng & Thanh toán, Pha chế tại quầy và Quản trị hệ thống.
+
+![Sơ đồ Use Case tổng quát](../diagrams/usecase-overview.svg)
+
 ---
 
 ## 3. Yêu cầu chức năng (FR)
@@ -245,6 +251,8 @@ Vai trò nhân viên/quản trị viên và quyền hạn tương ứng cần đ
 ---
 
 ### 3.4. Đặt hàng và thanh toán (Orders & Payments)
+
+![Sơ đồ Use Case phân hệ Đặt hàng & Thanh toán](../diagrams/usecase-checkout.svg)
 
 > **Quy tắc luồng trạng thái đơn hàng (Order State Machine):**
 > - Luồng thành công: `PENDING` → `PAID` → `PREPARING` → `READY` → `COMPLETED`.
