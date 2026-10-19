@@ -1,8 +1,8 @@
 @startuml usecase-overview
+title Sơ đồ Use-case tổng quát - Hệ thống BrewLite (Task 1.2)
 left to right direction
 skinparam packageStyle rectangle
 skinparam actorStyle awesome
-skinparam linetype ortho
 skinparam nodesep 40
 skinparam ranksep 50
 
@@ -12,27 +12,30 @@ rectangle "Hệ thống Đặt cà phê BrewLite" {
 
   ' CỘT 1: TÀI KHOẢN & THỰC ĐƠN
   together {
-    package "Tài khoản & Xác thực (Task 7)" as P_Auth {
+    package "Tài khoản & Xác thực (FR-01, FR-02)" as P_Auth {
       usecase "Đăng ký tài khoản" as UC_Register
       usecase "Đăng nhập & Nhận JWT" as UC_Login
     }
 
-    package "Thực đơn & Giỏ hàng (Task 2, 3, 4, 5)" as P_Menu {
+    package "Thực đơn & Giỏ hàng (FR-03 … FR-11)" as P_Menu {
       usecase "Xem danh sách thực đơn" as UC_ViewMenu
       usecase "Xem chi tiết & Tùy chọn (Size/Topping)" as UC_CustomizeItem
       usecase "Quản lý giỏ hàng\n(Thêm, sửa, xóa, tính tổng)" as UC_ManageCart
+      usecase "Đổi size / topping\ntrong giỏ hàng" as UC_ChangeSize
     }
   }
 
   ' CỘT 2: ĐẶT HÀNG & LỊCH SỬ
   together {
-    package "Đặt hàng & Thanh toán (Task 6, 8, 10)" as P_Checkout {
+    package "Đặt hàng & Thanh toán (FR-12 … FR-14)" as P_Checkout {
       usecase "Tạo đơn hàng\n(POST /orders - PENDING)" as UC_CreateOrder
       usecase "Thanh toán không tiền mặt\n(Ví/Thẻ)" as UC_Checkout
-      usecase "Áp mã giảm giá &\nTích lũy điểm (Loyalty)" as UC_Loyalty
+      usecase "Áp dụng voucher\n(mã giảm giá)" as UC_Voucher
+      usecase "Thử lại / đổi phương thức\nkhi thanh toán lỗi" as UC_Retry
+      usecase "Tích lũy điểm (Loyalty)" as UC_Loyalty
     }
 
-    package "Đơn hàng & Lịch sử (Task 9, 10)" as P_Orders {
+    package "Đơn hàng & Lịch sử (FR-15)" as P_Orders {
       usecase "Xem màn hình xác nhận đơn" as UC_OrderConfirmation
       usecase "Xem lịch sử đơn hàng\n(GET /orders/me)" as UC_OrderHistory
     }
@@ -57,14 +60,6 @@ actor "Cổng thanh toán\n(Mock Payment Gateway)" as MockPayment
 actor "Nhân viên pha chế\n(Barista)" as Barista
 actor "Quản lý / PO\n(Store Manager / PO)" as PO
 
-' --- CỐ ĐỊNH LAYOUT NGANG GIỮA CÁC CỘT ---
-P_Auth -[hidden]down-> P_Menu
-P_Checkout -[hidden]down-> P_Orders
-P_Barista -[hidden]down-> P_Admin
-
-P_Menu -[hidden]right-> P_Checkout
-P_Checkout -[hidden]right-> P_Barista
-
 ' --- KẾT NỐI KHÁCH HÀNG (BÊN TRÁI) ---
 Customer --> UC_Register
 Customer --> UC_Login
@@ -75,11 +70,16 @@ Customer --> UC_Checkout
 Customer --> UC_OrderConfirmation
 Customer --> UC_OrderHistory
 
-' --- QUAN HỆ INCLUDE / EXTEND ---
+' --- QUAN HỆ INCLUDE (use case gốc -> use case được bao hàm) ---
 UC_CustomizeItem .> UC_ManageCart : <<include>>
 UC_Checkout .> UC_CreateOrder : <<include>>
 UC_Checkout .> UC_Login : <<include>>
 UC_Checkout .> UC_OrderConfirmation : <<include>>
+
+' --- QUAN HỆ EXTEND (luồng thay thế / ngoại lệ; mũi tên từ use case mở rộng -> use case gốc) ---
+UC_ChangeSize .> UC_ManageCart : <<extend>>
+UC_Voucher .> UC_Checkout : <<extend>>
+UC_Retry .> UC_Checkout : <<extend>>
 UC_Loyalty .> UC_Checkout : <<extend>>
 
 ' --- KẾT NỐI ACTOR BÊN PHẢI ---
