@@ -1,0 +1,40 @@
+@startuml usecase-checkout
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+
+actor "Khách hàng\n(Customer)" as Customer
+actor "Cổng thanh toán\n(Mock Payment Gateway)" as MockPayment
+
+rectangle "Phân hệ Đặt hàng & Thanh toán (Task 1.3)" {
+  usecase "Xem thực đơn & chọn đồ uống" as UC_SelectProduct
+  usecase "Tùy chọn Size (S/M/L) & Topping" as UC_CustomizeItem
+  usecase "Quản lý giỏ hàng (Xem, sửa, xóa, tính tổng tiền)" as UC_ManageCart
+  usecase "Đăng nhập xác thực (JWT)" as UC_Auth
+  usecase "Tạo đơn hàng (POST /orders - PENDING)" as UC_CreateOrder
+  usecase "Chọn phương thức (Ví điện tử / Thẻ)" as UC_SelectPaymentMethod
+  usecase "Thực hiện thanh toán không tiền mặt (POST /payments)" as UC_ProcessPayment
+  usecase "Áp dụng khuyến mãi & Tích lũy điểm (Loyalty)" as UC_ApplyLoyalty
+  usecase "Hiển thị xác nhận đơn (Mã đơn & Trạng thái PAID)" as UC_OrderConfirmation
+}
+
+' Khách hàng thao tác trực tiếp
+Customer --> UC_SelectProduct
+Customer --> UC_CustomizeItem
+Customer --> UC_ManageCart
+Customer --> UC_CreateOrder
+Customer --> UC_OrderConfirmation
+
+' Mối quan hệ giữa các Use Cases
+UC_CustomizeItem ..> UC_ManageCart : <<include>>
+UC_CreateOrder ..> UC_ManageCart : <<include>>
+UC_CreateOrder ..> UC_Auth : <<include>>
+UC_CreateOrder ..> UC_SelectPaymentMethod : <<include>>
+UC_CreateOrder ..> UC_ProcessPayment : <<include>>
+UC_ProcessPayment ..> UC_ApplyLoyalty : <<extend>>
+
+' Tác nhân bên ngoài xử lý
+UC_ProcessPayment --> MockPayment : Gửi yêu cầu Idempotent
+UC_ProcessPayment ..> UC_OrderConfirmation : <<include>> (Thành công)
+
+@enduml 
