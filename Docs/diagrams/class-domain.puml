@@ -1,0 +1,174 @@
+@startuml BrewLite_Domain_Class_Diagram
+
+left to right direction
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+hide empty members
+
+class User {
+  - id: UUID
+  - email: String
+  - passwordHash: String
+  - fullName: String [0..1]
+  - phoneNumber: String
+  - role: Role
+  - loyaltyPoints: Integer = 0
+  - createdAt: DateTime
+  - updatedAt: DateTime
+  --
+  + addLoyaltyPoints(points: Integer): void
+}
+
+class Product {
+  - id: UUID
+  - name: String
+  - description: String [0..1]
+  - imageUrl: String [0..1]
+  - category: String [0..1]
+  - priceS: Decimal
+  - priceM: Decimal
+  - priceL: Decimal
+  - toppingOptions: JSON = []
+  - stock: Integer = 0
+  - isAvailable: Boolean = true
+  - createdAt: DateTime
+  - updatedAt: DateTime
+  - version: Integer = 0
+  --
+  + getPrice(size: Size, toppingIds: List<String>): Decimal
+  + decreaseStock(quantity: Integer): void
+}
+
+class Order {
+  - id: UUID
+  - orderCode: String
+  - checkoutKey: String
+  - status: OrderStatus = PENDING
+  - subtotal: Decimal
+  - discountAmount: Decimal = 0
+  - totalAmount: Decimal
+  - voucherCode: String [0..1]
+  - voucherUsageCountedAt: DateTime [0..1]
+  - note: String [0..1]
+  - createdAt: DateTime
+  - updatedAt: DateTime
+  --
+  + applyVoucher(voucher: Voucher, userUsageCount: Integer, now: DateTime): void
+  + calculateTotal(): Decimal
+  + changeStatus(newStatus: OrderStatus): void
+}
+
+class OrderItem {
+  - id: UUID
+  - productName: String
+  - size: Size = M
+  - quantity: Integer
+  - selectedToppings: JSON = []
+  - unitPrice: Decimal
+  - subtotal: Decimal
+  --
+  + calculateSubtotal(): Decimal
+}
+
+class Payment {
+  - id: UUID
+  - attemptNumber: Integer
+  - idempotencyKey: String
+  - paymentMethod: PaymentMethod
+  - amount: Decimal
+  - status: PaymentStatus = PENDING
+  - transactionCode: String [0..1]
+  - errorMessage: String [0..1]
+  - createdAt: DateTime
+  - completedAt: DateTime [0..1]
+  - errorCode: String [0..1]
+  - refundedAt: DateTime [0..1]
+  --
+  + markSucceeded(transactionCode: String, completedAt: DateTime): void
+  + markFailed(errorCode: String, errorMessage: String, completedAt: DateTime): void
+  + markRefunded(refundedAt: DateTime): void
+}
+
+class Voucher {
+  - id: UUID
+  - code: String
+  - discountType: DiscountType
+  - discountValue: Decimal
+  - minOrderValue: Decimal = 0
+  - maxDiscount: Decimal [0..1]
+  - usageLimit: Integer
+  - usageLimitPerUser: Integer [0..1]
+  - usedCount: Integer = 0
+  - startDate: DateTime
+  - endDate: DateTime
+  - isActive: Boolean = true
+  --
+  + isApplicable(subtotal: Decimal, userUsageCount: Integer, now: DateTime): Boolean
+  + calculateDiscount(subtotal: Decimal): Decimal
+  + recordUsage(): void
+}
+
+class LoyaltyTransaction {
+  - id: UUID
+  - points: Integer
+  - createdAt: DateTime
+  --
+  + {static} createEarned(user: User, order: Order, points: Integer): LoyaltyTransaction
+}
+
+enum Role {
+  CUSTOMER
+  BARISTA
+  ADMIN
+}
+
+enum Size {
+  S`
+  M
+  L
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  E_WALLET
+  BANK_CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+User "1" -- "0..*" Order : places
+Order "1" *-- "1..*" OrderItem : contains
+Product "1" -- "0..*" OrderItem : references
+Order "1" -- "0..3" Payment : payment attempts
+Voucher "0..1" -- "0..*" Order : applied to
+User "1" -- "0..*" LoyaltyTransaction : receives
+Order "1" -- "0..1" LoyaltyTransaction : earns
+
+User ..> Role
+Product ..> Size
+OrderItem ..> Size
+Order ..> OrderStatus
+Payment ..> PaymentMethod
+Payment ..> PaymentStatus
+Voucher ..> DiscountType
+
+@enduml
