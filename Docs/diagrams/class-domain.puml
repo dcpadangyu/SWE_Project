@@ -17,6 +17,7 @@ class User {
   - updatedAt: DateTime
   --
   + addLoyaltyPoints(points: Integer): void
+  + createOrder(details: List<OrderDetail>, checkoutKey: String): Order
 }
 
 class Product {
@@ -58,7 +59,7 @@ class Order {
   + changeStatus(newStatus: OrderStatus): void
 }
 
-class OrderItem {
+class OrderDetail {
   - id: UUID
   - productName: String
   - size: Size = M
@@ -123,7 +124,7 @@ enum Role {
 }
 
 enum Size {
-  S`
+  S
   M
   L
 }
@@ -156,8 +157,8 @@ enum DiscountType {
 }
 
 User "1" -- "0..*" Order : places
-Order "1" *-- "1..*" OrderItem : contains
-Product "1" -- "0..*" OrderItem : references
+Order "1" *-- "1..*" OrderDetail : contains
+Product "1" -- "0..*" OrderDetail : references
 Order "1" -- "0..3" Payment : payment attempts
 Voucher "0..1" -- "0..*" Order : applied to
 User "1" -- "0..*" LoyaltyTransaction : receives
@@ -165,7 +166,7 @@ Order "1" -- "0..1" LoyaltyTransaction : earns
 
 User ..> Role
 Product ..> Size
-OrderItem ..> Size
+OrderDetail ..> Size
 Order ..> OrderStatus
 Payment ..> PaymentMethod
 Payment ..> PaymentStatus

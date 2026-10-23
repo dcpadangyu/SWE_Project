@@ -12,7 +12,7 @@ Quy ước:
 - `DateTime`: thời điểm được lưu theo quy ước múi giờ thống nhất.
 - Quan hệ giữa các đối tượng được thể hiện bằng association trong UML; không lặp lại toàn bộ khóa ngoại trong danh sách thuộc tính.
 - `toppingOptions` và `selectedToppings` là mảng JSON; mảng rỗng `[]` biểu thị không có topping.
-- Giỏ hàng (Cart) không được mô hình hóa thành lớp domain vì theo SRS (FR-06 đến FR-11) và use case, giỏ hàng được giữ ở phía client (state/localStorage). Chỉ khi khách xác nhận thanh toán, nội dung giỏ mới được chuyển thành `Order` và `OrderItem`.
+- Giỏ hàng (Cart) không được mô hình hóa thành lớp domain vì theo SRS (FR-06 đến FR-11) và use case, giỏ hàng được giữ ở phía client (state/localStorage). Chỉ khi khách xác nhận thanh toán, nội dung giỏ mới được chuyển thành `Order` và `OrderDetail`.
 
 ## 2. Mô tả các lớp
 
@@ -37,6 +37,7 @@ Quy ước:
 **Danh sách các method chính:**
 
 - `+addLoyaltyPoints(points: Integer): void`: Cộng số điểm được xác định từ một đơn thanh toán thành công vào `loyaltyPoints`. Từ chối số điểm cộng không hợp lệ. Phương thức không tự tính tỷ lệ quy đổi tiền thành điểm.
+- `+createOrder(details: List<OrderDetail>, checkoutKey: String): Order`: Tạo một Order thuộc về User từ ít nhất một OrderDetail đã được backend kiểm tra và định giá, gắn checkoutKey cho yêu cầu tạo đơn và khởi tạo trạng thái PENDING. Tính lại subtotal và totalAmount ở backend, không dùng tổng tiền do client gửi. Service/repository kiểm tra quyền từ JWT, tính hợp lệ của sản phẩm và tồn kho, bảo đảm checkoutKey duy nhất và xử lý yêu cầu lặp. Method này không trừ tồn kho, ghi nhận thanh toán, cộng điểm hoặc sử dụng lượt voucher; các bước đó chỉ diễn ra khi thanh toán thành công.
 
 ### 2.1.2. Lớp Product
 
@@ -63,7 +64,7 @@ Quy ước:
 
 **Danh sách các method chính:**
 
-- `+getPrice(size: Size, toppingIds: List<String>): Decimal`: Kiểm tra size, topping thuộc sản phẩm và đang được phục vụ; mỗi topping chỉ được chọn một lần (id không trùng). Danh sách rỗng nghĩa là không chọn topping. Trả về `giá size + Σ giá topping`. Từ chối tùy chọn không hợp lệ (SRS AC-05.6). Đây là đơn giá một ly đã gồm topping, dùng làm bản chụp `OrderItem.unitPrice`.
+- `+getPrice(size: Size, toppingIds: List<String>): Decimal`: Kiểm tra size, topping thuộc sản phẩm và đang được phục vụ; mỗi topping chỉ được chọn một lần (id không trùng). Danh sách rỗng nghĩa là không chọn topping. Trả về `giá size + Σ giá topping`. Từ chối tùy chọn không hợp lệ (SRS AC-05.6). Đây là đơn giá một ly đã gồm topping, dùng làm bản chụp `OrderDetail.unitPrice`.
 
 - `+decreaseStock(quantity: Integer): void`: Kiểm tra số ly cần trừ là số nguyên dương và không vượt tồn kho, sau đó giảm `stock` và tăng `version`. Khi không đủ hàng, phát sinh lỗi nghiệp vụ. Chỉ gọi trong bước hoàn tất thanh toán, không gọi khi sửa giỏ hay chỉ tạo Order PENDING. Method này không tự phát hiện xung đột đồng thời; việc kiểm tra `version` (optimistic locking) và transaction thuộc service/repository. Khi xung đột, đơn được xử lý theo use case E2b.
 
@@ -78,7 +79,7 @@ Quy ước:
 | 1   | `-id`                    | UUID            | Bắt buộc, duy nhất                      | Định danh đơn hàng.                                                                                                                                                                                                                                      |
 | 2   | `-orderCode`             | String          | Bắt buộc, duy nhất                      | Mã đơn hiển thị cho khách và quầy; giao diện hiển thị dạng `#orderCode` (ví dụ `#1042`, SRS AC-14.1).                                                                                                                                                    |
 | 3   | `-status`                | OrderStatus     | Bắt buộc, mặc định PENDING              | Trạng thái hiện tại của đơn.                                                                                                                                                                                                                             |
-| 4   | `-subtotal`              | Decimal         | Bắt buộc, không âm                      | Tổng thành tiền các OrderItem trước giảm giá.                                                                                                                                                                                                            |
+| 4   | `-subtotal`              | Decimal         | Bắt buộc, không âm                      | Tổng thành tiền các OrderDetail trước giảm giá.                                                                                                                                                                                                          |
 | 5   | `-discountAmount`        | Decimal         | Bắt buộc, mặc định 0; từ 0 đến subtotal | Số tiền được giảm thực tế của đơn (use case A1: `discount_amount`).                                                                                                                                                                                      |
 | 6   | `-totalAmount`           | Decimal         | Bắt buộc, không âm                      | Số tiền cuối cùng phải thanh toán.                                                                                                                                                                                                                       |
 | 7   | `-voucherCode`           | String [0..1]   | Không bắt buộc                          | Bản chụp mã voucher đã áp dụng (use case A1: `voucher_code`). Mỗi đơn áp dụng tối đa 1 voucher.                                                                                                                                                          |
@@ -91,11 +92,11 @@ Quy ước:
 **Danh sách các method chính:**
 
 - `+applyVoucher(voucher: Voucher, userUsageCount: Integer, now: DateTime): void`: Kiểm tra voucher có áp dụng được với đơn và người dùng hay không. Nếu hợp lệ, gắn Voucher, lưu mã voucher và số tiền giảm, sau đó cập nhật tổng tiền. Mỗi đơn chỉ áp dụng tối đa 1 voucher. Thao tác này chưa ghi nhận lượt sử dụng thành công.
-- `+calculateTotal(): Decimal`: Tính lại `subtotal` từ các OrderItem, xác định `totalAmount = subtotal - discountAmount` (không âm), cập nhật các thuộc tính tổng tiền và trả về tổng thanh toán. Backend luôn tự tính lại, không nhận tổng tiền từ client (SRS AC-12.3).
+- `+calculateTotal(): Decimal`: Tính lại `subtotal` từ các OrderDetail, xác định `totalAmount = subtotal - discountAmount` (không âm), cập nhật các thuộc tính tổng tiền và trả về tổng thanh toán. Backend luôn tự tính lại, không nhận tổng tiền từ client (SRS AC-12.3).
 
 - `+changeStatus(newStatus: OrderStatus): void`: Chỉ chấp nhận các bước chuyển trong state machine. Việc chuyển PAID được service phối hợp với kết quả thanh toán, kiểm tra/trừ kho, điểm và lượt voucher; không chỉ đổi giá trị enum.
 
-### 2.1.4. Lớp OrderItem
+### 2.1.4. Lớp OrderDetail
 
 **Tác dụng:** Lưu một dòng món trong đơn, bao gồm cấu hình đã chọn, số lượng và giá tại thời điểm đặt.
 
