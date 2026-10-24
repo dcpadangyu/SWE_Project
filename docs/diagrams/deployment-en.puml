@@ -1,0 +1,60 @@
+@startuml
+title BrewLite - Production Deployment Diagram
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+skinparam ArrowColor #475569
+skinparam packageStyle rectangle
+
+actor "User\n(Browser / PWA)" as user
+cloud "Public Internet" as internet
+
+node "Web / CDN Service\n(Render / Vercel / equivalent)" as web {
+  component "Next.js UI\n(static assets + SSR)" as next
+}
+
+node "API Service\n(Render / Railway / Fly.io / VPS)" as api {
+  component "NestJS API\nHTTPS :443 -> HTTP :8080" as nest
+  artifact "Secrets / environment variables\nPORT, DATABASE_URL,\nJWT_SECRET, payment keys" as secrets
+}
+
+database "Managed PostgreSQL\npersistent storage" as db {
+  component "Database\n(private network)" as postgres
+}
+
+cloud "Mock Payment Gateway\n(or external payment provider)" as payment
+
+user --> internet : HTTPS
+internet --> web : HTTPS
+web --> api : HTTPS REST\nCORS allow-list
+api --> db : TLS / private network\n5432
+api --> payment : HTTPS
+api ..> secrets : read at startup
+
+note right of web
+Production only:
+- CDN/cache public assets
+- no database credentials
+- NEXT_PUBLIC_API_URL points to API
+end note
+
+note right of api
+Health check: GET /health
+Logs: stdout/stderr
+Restart on failure
+end note
+
+note bottom of db
+Backups, migrations and retention
+are managed separately from deploys.
+end note
+
+legend
+  == Environment separation ==
+  Local: services run on the developer machine; localhost only.
+  CI: build, test and lint; no production secrets.
+  Production: public HTTPS edge, private API/DB path,
+  managed secrets, health checks and persistent backups.
+endlegend
+@enduml
