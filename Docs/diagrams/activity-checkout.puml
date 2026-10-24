@@ -1,0 +1,116 @@
+@startuml activity-checkout
+skinparam conditionStyle insidediamond
+skinparam defaultTextAlignment center
+skinparam roundCorner 10
+skinparam monochrome false
+
+|Khách hàng|
+start
+:Mở ứng dụng BrewLite;
+
+|Next.js UI|
+:Gửi yêu cầu lấy menu;
+
+|NestJS Backend|
+:Lấy danh sách sản phẩm từ DB;
+:Trả về danh sách đồ uống;
+
+|Next.js UI|
+:Hiển thị Menu (hình ảnh, tên, giá);
+
+|Khách hàng|
+:Chọn sản phẩm mong muốn;
+
+|Next.js UI|
+:Mở màn hình chi tiết sản phẩm;
+
+|Khách hàng|
+:Chọn Size (S/M/L) và Topping;
+:Nhấn "Thêm vào giỏ hàng";
+
+|Next.js UI|
+:Cập nhật State giỏ hàng (Zustand);
+:Hiển thị màn hình Giỏ hàng & tổng tiền;
+
+|Khách hàng|
+:Bấm "Thanh toán";
+
+|Next.js UI|
+if (Đã đăng nhập (có token JWT)?) then (chưa)
+  |Khách hàng|
+  :Nhập thông tin đăng nhập;
+  |Next.js UI|
+  :Gửi yêu cầu đăng nhập (POST /auth/login);
+  |NestJS Backend|
+  :Xác thực mật khẩu (bcrypt) và tạo JWT;
+  |Next.js UI|
+  :Lưu Access Token;
+else (đã đăng nhập)
+endif
+
+|Next.js UI|
+:Gửi yêu cầu tạo đơn hàng (POST /orders);
+
+|NestJS Backend|
+:Kiểm tra tồn kho nguyên liệu / sản phẩm;
+if (Còn đủ tồn kho?) then (hết hàng)
+  :Trả về lỗi "Hết hàng / Tồn kho không đủ";
+  |Next.js UI|
+  :Hiển thị thông báo hết hàng;
+  |Khách hàng|
+  :Điều chỉnh lại giỏ hàng;
+  detach
+else (còn hàng)
+  :Tạo đơn hàng trạng thái PENDING;
+  :Giảm/khóa số lượng tồn kho (Optimistic lock);
+endif
+
+|Next.js UI|
+:Hiển thị màn hình chọn phương thức thanh toán;
+
+|Khách hàng|
+:Chọn Ví điện tử / Thẻ;
+:Nhấn "Xác nhận trả";
+
+|Next.js UI|
+:Tạo Idempotency-Key;
+:Gửi POST /payments kèm Idempotency-Key;
+
+|NestJS Backend|
+:Xử lý gọi Cổng thanh toán (Mock Gateway);
+if (Thanh toán thành công?) then (thất bại / lỗi)
+  :Chuyển trạng thái đơn -> PAYMENT_FAILED;
+  :Hoàn trả số lượng tồn kho đã giữ;
+  |Next.js UI|
+  :Báo lỗi thanh toán & giữ nguyên giỏ hàng;
+  |Khách hàng|
+  :Chọn thử lại thanh toán hoặc Hủy đơn;
+  stop
+else (thành công)
+  :Cập nhật trạng thái đơn -> PAID;
+  :Cộng điểm tích lũy (Loyalty points);
+endif
+
+|Next.js UI|
+:Hiển thị màn hình Đặt hàng thành công\n(Mã đơn, Trạng thái: PAID);
+:Xóa giỏ hàng hiện tại;
+
+|Barista|
+:Tiếp nhận đơn hàng mới (PAID);
+:Chuyển trạng thái đơn -> PREPARING;
+:Tiến hành pha chế đồ uống;
+:Pha chế xong -> Chuyển trạng thái -> READY;
+:Thông báo mời khách nhận nước;
+
+|Khách hàng|
+:Theo dõi trạng thái đơn hàng (GET /orders/me);
+:Đến quầy nhận đồ uống khi trạng thái là READY;
+
+|Barista|
+:Giao đồ uống cho khách;
+:Chuyển trạng thái đơn -> COMPLETED;
+
+|Khách hàng|
+:Nhận đồ uống hoàn tất;
+stop
+@enduml
