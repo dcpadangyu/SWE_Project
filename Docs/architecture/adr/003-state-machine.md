@@ -1,76 +1,58 @@
 # ADR-003: Quy định chuyển trạng thái đơn hàng
 
-- **Trạng thái:** Đề xuất, cần đối chiếu với yêu cầu dự án
+- **Trạng thái:** Đã chấp thuận (Accepted)
 - **Ngày:** 24-10-2026
-- **Người quyết định:** Nhóm dự án
+- **Người quyết định:** Toàn bộ thành viên nhóm dự án BrewLite
 
 ## 1. Bối cảnh
 
-Quy trình đặt cà phê cần sử dụng trạng thái đơn hàng thống nhất giữa Backend, Frontend và các bài kiểm thử.
+Quy trình đặt và xử lý cà phê trực tuyến đòi hỏi vòng đời đơn hàng phải diễn ra theo một chu trình nghiêm ngặt, nhất quán giữa Frontend (Next.js), Backend (NestJS), Cổng thanh toán (Mock Payment) và Nghiệp vụ pha chế tại quầy (Barista).
 
-## 2. Quyết định đề xuất
+Hệ thống cần tránh tuyệt đối các tình trạng dữ liệu không hợp lệ, ví dụ: đơn chưa thanh toán đã chuyển sang pha chế, đơn đã hoàn tất bị thanh toán lại, hoặc đơn bị hủy mà không hoàn trả tồn kho.
 
-Quản lý vòng đời đơn hàng bằng các trạng thái được định nghĩa rõ ràng. Backend chịu trách nhiệm kiểm tra và thực hiện các chuyển trạng thái hợp lệ. Không cho phép Client tự ý cập nhật trạng thái đơn hàng.
+## 2. Quyết định
 
-## 3. Sơ đồ chuyển trạng thái
+Nhóm thống nhất áp dụng mô hình **Máy trạng thái hữu hạn (Order State Machine)** gồm đúng **7 trạng thái** được kiểm soát tập trung tại tầng Backend NestJS. Mọi hành động chuyển trạng thái trái phép đều bị hệ thống chặn và phát sinh mã lỗi `400 Bad Request` hoặc `409 Conflict`.
+
+## 3. Sơ đồ chuyển trạng thái chính thức
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING
-    PENDING --> PAID: Thanh toán thành công
-    PENDING --> PAYMENT_FAILED: Thanh toán thất bại
-    PENDING --> CANCELLED: Hủy đơn hợp lệ
-    PAYMENT_FAILED --> PENDING: Thử thanh toán lại
-    PAYMENT_FAILED --> CANCELLED: Hủy đơn
-    PAID --> PREPARING: Bắt đầu chuẩn bị
-    PAID --> CANCELLED: Nếu chính sách cho phép
-    PREPARING --> READY: Hoàn tất pha chế
-    READY --> COMPLETED: Hoàn tất đơn hàng
+    [*] --> PENDING: Khách tạo đơn hàng
+    PENDING --> PAID: Thanh toán thành công (200 OK)
+    PENDING --> PAYMENT_FAILED: Cổng thanh toán báo lỗi (402)
+    PENDING --> CANCELLED: Khách hủy đơn / Quá hạn 15 phút
+    PAYMENT_FAILED --> PENDING: Khách bấm "Thử lại" (tối đa 3 lần)
+    PAYMENT_FAILED --> CANCELLED: Khách chọn hủy / Quá 3 lần thử
+    PAID --> PREPARING: Barista tiếp nhận pha chế
+    PAID --> CANCELLED: Hủy đơn ngoại lệ (sự cố hết hàng / hoàn tiền)
+    PREPARING --> READY: Hoàn tất pha chế, mời khách nhận nước
+    READY --> COMPLETED: Khách nhận đồ uống tại quầy
     COMPLETED --> [*]
     CANCELLED --> [*]
 ```
 
-## 4. Định nghĩa trạng thái
+## 4. Định nghĩa và ý nghĩa các trạng thái
 
-- **PENDING:** Đơn hàng được tạo và đang chờ thanh toán.
-- **PAID:** Thanh toán thành công.
-- **PAYMENT_FAILED:** Thanh toán thất bại; khách hàng có thể thử lại.
-- **PREPARING:** Đơn hàng đang được chuẩn bị.
-- **READY:** Đơn hàng đã sẵn sàng để nhận.
-- **COMPLETED:** Đơn hàng đã hoàn tất.
-- **CANCELLED:** Đơn hàng đã bị hủy.
+- **PENDING:** Đơn hàng vừa được khởi tạo từ giỏ hàng, đã giữ chỗ tồn kho và đang chờ thanh toán.
+- **PAID:** Đã nhận phản hồi thanh toán thành công từ Mock Payment Gateway; điểm thưởng Loyalty được cộng cho khách.
+- **PAYMENT_FAILED:** Giao dịch thanh toán bị từ chối; hệ thống giữ nguyên giỏ hàng để khách có thể thử lại.
+- **PREPARING:** Nhân viên Barista tại quầy xác nhận tiếp nhận đơn và bắt đầu pha chế.
+- **READY:** Đồ uống đã hoàn thành, hệ thống gửi thông báo mời khách tới quầy nhận nước.
+- **COMPLETED:** Đơn hàng đã bàn giao thành công cho khách hàng (Trạng thái kết thúc thành công).
+- **CANCELLED:** Đơn hàng bị hủy do khách chủ động, quá hạn thanh toán hoặc thanh toán lỗi quá số lần quy định (Trạng thái kết thúc đóng).
 
-## 5. Quy tắc nghiệp vụ
+## 5. Quy tắc nghiệp vụ bắt buộc
 
-1. Đơn hàng mới được tạo với trạng thái `PENDING`.
-2. Thanh toán thành công chuyển đơn sang `PAID`.
-3. Thanh toán thất bại chuyển đơn sang `PAYMENT_FAILED`.
-4. Khi thanh toán thất bại, không cộng điểm tích lũy và giữ nguyên giỏ hàng để khách có thể thử lại.
-5. Khi thử lại thanh toán, đơn hàng có thể quay về `PENDING`.
-6. Chỉ cho phép hủy đơn tại các trạng thái và thời điểm được chính sách nghiệp vụ quy định.
-7. Sử dụng `Idempotency-Key` để hạn chế xử lý thanh toán trùng lặp.
-8. Backend phải từ chối các chuyển trạng thái không hợp lệ.
-9. Không cho phép thanh toán lại đơn đã ở trạng thái kết thúc như `COMPLETED` hoặc `CANCELLED`.
-10. Không cộng điểm tích lũy trùng lặp khi xử lý lại yêu cầu thanh toán.
+1. **Kiểm soát từ Backend:** Toàn bộ logic chuyển trạng thái phải do hàm nghiệp vụ của Backend (ví dụ `assertTransition(currentStatus, targetStatus)`) kiểm tra và thực thi. Tuyệt đối không cho phép Frontend gửi trực tiếp trường `status` lên để ghi đè.
+2. **Cơ chế Idempotency:** Mọi yêu cầu thanh toán đều phải kèm `Idempotency-Key` để tránh trường hợp mạng chập chờn gửi lặp làm chuyển trạng thái hoặc trừ tiền nhiều lần.
+3. **Bảo toàn giỏ hàng khi lỗi:** Khi đơn chuyển sang `PAYMENT_FAILED`, hệ thống không trừ điểm tích lũy, không hủy giỏ hàng trên giao diện và cho phép khách thử lại tối đa 3 lần.
+4. **Trạng thái bất biến (Immutable End-States):** Các đơn hàng đã ở trạng thái `COMPLETED` hoặc `CANCELLED` là trạng thái kết thúc, tuyệt đối không được phép chuyển sang bất kỳ trạng thái nào khác.
 
 ## 6. Hệ quả
 
 ### Lợi ích
 
-- Thống nhất trạng thái giữa các thành phần.
-- Dễ viết kiểm thử và xác định lỗi.
-- Hạn chế cập nhật trạng thái trái phép.
-
-### Rủi ro
-
-- Cần xác định rõ quyền của từng vai trò.
-- Chính sách hủy đơn sau thanh toán cần được nhóm xác nhận.
-- Cần kiểm thử các trường hợp thử lại và yêu cầu trùng lặp.
-
-## 7. Việc cần xác nhận
-
-- [ ] Xác nhận sơ đồ trạng thái với yêu cầu đã duyệt.
-- [ ] Xác nhận quyền thực hiện từng chuyển trạng thái.
-- [ ] Xác nhận chính sách hủy sau thanh toán.
-- [ ] Bổ sung kiểm thử chuyển trạng thái hợp lệ và không hợp lệ.
-- [ ] Xác nhận cơ chế xử lý thanh toán lặp và thử lại.
+- Thống nhất tuyệt đối hành vi của hệ thống giữa tài liệu SRS, Sơ đồ Use Case, Activity Diagram, Sequence Diagram và Class Diagram.
+- Giúp việc viết Unit Test và Integration Test cho module Orders trở nên rõ ràng và bao phủ 100% các nhánh trạng thái.
+- Dễ dàng mở rộng cho các tính năng nâng cao sau này (ví dụ: thông báo Webhook/SSE cho khách khi trạng thái chuyển sang `READY`).

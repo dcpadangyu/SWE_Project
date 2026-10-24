@@ -1,134 +1,117 @@
 # BrewLite — Tổng quan kiến trúc hệ thống
 
-> **Trạng thái:** Bản nháp, chờ nhóm xem xét. Cần đối chiếu với mã nguồn hiện tại và yêu cầu đã được thống nhất trước khi chốt.
+> **Trạng thái:** Chính thức (Approved) — Toàn bộ các quyết định kiến trúc đã được nhóm thống nhất thông qua.
 
 ## 1. Mục đích và phạm vi
 
-Tài liệu mô tả kiến trúc tổng quan đề xuất của BrewLite — ứng dụng đặt cà phê không dùng tiền mặt, được phát triển trong khuôn khổ môn Công nghệ phần mềm.
+Tài liệu mô tả kiến trúc tổng quan chính thức của BrewLite — ứng dụng đặt cà phê không dùng tiền mặt, được phát triển trong khuôn khổ môn Công nghệ phần mềm (SGU).
 
-**Phạm vi MVP:** Tập trung vào chức năng dành cho Khách hàng (Customer). Các chức năng dành cho Nhân viên (Staff) và Quản trị viên (Admin) nằm ngoài phạm vi MVP hiện tại.
+**Phạm vi MVP:** Tập trung giải quyết trọn vẹn luồng nghiệp vụ cốt lõi dành cho Khách hàng (Customer) từ duyệt menu, tùy chọn thức uống, quản lý giỏ hàng, đặt đơn đến thanh toán không tiền mặt. Các chức năng nâng cao dành cho Nhân viên (Staff/Barista) và Quản trị viên (Admin) được thiết kế sẵn sàng để mở rộng ở các giai đoạn sau.
 
 ## 2. Bối cảnh công nghệ
 
-- **Frontend:** Next.js, React, TypeScript, Tailwind CSS.
-- **Backend:** NestJS, TypeScript, REST API.
-- **Cơ sở dữ liệu:** Dự kiến tích hợp PostgreSQL.
-- **Repository:** Frontend, Backend và tài liệu được quản lý trong cùng một repository.
-- **Đóng gói:** Docker thuộc bối cảnh thiết lập/yêu cầu dự án.
-
-Cần kiểm tra nhánh mã nguồn và cấu hình hiện tại để phân biệt chức năng đã triển khai với chức năng còn dự kiến.
+- **Frontend:** Next.js, React, TypeScript, Tailwind CSS (Hỗ trợ PWA, Mobile-first).
+- **Backend:** NestJS, TypeScript, REST API (Kiến trúc Modular Monolith).
+- **Cơ sở dữ liệu:** PostgreSQL (kết hợp Prisma ORM và cơ chế migration tự động).
+- **Repository:** Monorepo quản lý tập trung Frontend, Backend và Tài liệu (xem [ADR-001](adr/001-monorepo.md)).
+- **Đóng gói & Triển khai:** Docker container, hỗ trợ triển khai trên các nền tảng PaaS (Render, Railway, Fly.io, Vercel).
 
 ## 3. Bối cảnh hệ thống
 
 ```mermaid
 flowchart LR
-    Customer[Khách hàng] --> Browser[Trình duyệt]
+    Customer[Khách hàng] --> Browser[Trình duyệt / PWA]
     Browser --> FE[Next.js Frontend]
     FE --> API[NestJS REST API]
-    API --> DB[(PostgreSQL - dự kiến)]
+    API --> DB[(PostgreSQL Database)]
     API --> Pay[Mock Payment Adapter]
 
-    Staff[Nhân viên - ngoài MVP]
-    Admin[Quản trị viên - ngoài MVP]
+    Staff[Nhân viên Barista - Pha chế]
+    Admin[Quản lý cửa hàng / PO]
 ```
 
-Trình duyệt hiển thị giao diện Frontend. Frontend gửi yêu cầu đến REST API. Backend kiểm tra dữ liệu, xác thực, phân quyền, áp dụng quy tắc nghiệp vụ và truy cập dữ liệu.
+Trình duyệt hiển thị giao diện Frontend. Frontend gửi yêu cầu đến REST API. Backend kiểm tra dữ liệu, xác thực, phân quyền, áp dụng quy tắc nghiệp vụ và truy cập dữ liệu qua Prisma ORM.
 
-**Mock Payment:** Là ranh giới xử lý thanh toán mô phỏng được đề xuất cho đồ án, không đại diện cho nhà cung cấp thanh toán thực tế. Không thu thập hoặc lưu trữ thông tin thẻ thanh toán.
+**Mock Payment Adapter:** Là module xử lý thanh toán mô phỏng được phát triển độc lập cho đồ án, hỗ trợ Ví điện tử và Thẻ ngân hàng. Tuyệt đối không lưu trữ thông tin thẻ thanh toán nhạy cảm của người dùng.
 
 ## 4. Góc nhìn triển khai thành phần
 
 ```mermaid
 flowchart TB
-    Client[Trình duyệt / PWA] -->|HTTPS khi triển khai thực tế| FE[Next.js Service]
-    FE -->|Yêu cầu API| BE[NestJS API Service]
-    BE --> DB[(PostgreSQL)]
+    Client[Trình duyệt / PWA] -->|HTTPS :443| FE[Next.js Web Service / CDN]
+    FE -->|HTTPS REST :443 -> :8080| BE[NestJS API Service]
+    BE -->|TLS / Mạng nội bộ :5432| DB[(PostgreSQL + Persistent Storage)]
+    BE -->|HTTPS| Pay[Mock Payment Gateway]
 ```
 
-Kiến trúc triển khai thực tế, cổng kết nối, TLS, quy tắc mạng, lưu trữ dữ liệu và quản lý bí mật cần được xác nhận theo kế hoạch triển khai. Không công khai cổng cơ sở dữ liệu ra Internet.
+Kiến trúc triển khai phân tách rõ ràng ranh giới mạng:
+- Mọi kết nối từ Internet công cộng đều bắt buộc qua **HTTPS**.
+- Cơ sở dữ liệu PostgreSQL nằm trong mạng nội bộ riêng (Private Network), không mở cổng ra Internet.
+- Secret và biến môi trường được quản lý tập trung ở Secret Store của nhà cung cấp đám mây.
 
-## 5. Định hướng Backend
+## 5. Định hướng Backend: Modular Monolith
 
-### Đề xuất: Modular Monolith
+Ứng dụng NestJS API được cấu trúc theo mô hình **Modular Monolith**, phân chia thành các module có ranh giới nghiệp vụ độc lập:
 
-Duy trì một ứng dụng NestJS API, được tổ chức thành các module có trách nhiệm rõ ràng. Đây là đề xuất chờ nhóm xác nhận, không khẳng định cấu trúc mã nguồn hiện tại đã hoàn thiện theo mô hình này.
+- **Auth / Identity Module:** Xác thực người dùng, băm mật khẩu (`bcrypt`), cấp phát và kiểm tra token JWT (`JwtAuthGuard`).
+- **Users Module:** Quản lý hồ sơ người dùng, vai trò (`Role`) và tích lũy điểm thưởng (`loyaltyPoints`).
+- **Products / Menu Module:** Quản lý danh mục đồ uống, tùy chọn size, topping, giá và số lượng tồn kho (`stock`).
+- **Orders Module:** Quản lý quy trình đặt đơn, tính toán thành tiền ở phía server, kiểm soát đồng thời (Optimistic Locking) và máy trạng thái đơn hàng (xem [ADR-003](adr/003-state-machine.md)).
+- **Payments Module:** Tích hợp cổng thanh toán mô phỏng, xử lý giao dịch an toàn với cơ chế chống lặp `Idempotency-Key`.
+- **Common / Infrastructure Module:** Cung cấp `PrismaService` dùng chung, bộ lọc ngoại lệ toàn cục (`HttpExceptionFilter`), logging và endpoint kiểm tra tình trạng dịch vụ (`HealthCheckController`).
 
-Các ranh giới nghiệp vụ dự kiến:
-
-- **Auth / Identity:** Xác thực và quản lý phiên hoặc token.
-- **Users:** Hồ sơ người dùng và các chức năng liên quan đến vai trò.
-- **Catalog / Menu:** Sản phẩm, danh mục và tình trạng kinh doanh.
-- **Orders:** Tạo đơn hàng và quản lý vòng đời đơn.
-- **Payments:** Xử lý thanh toán mô phỏng.
-- **Common / Infrastructure:** Cấu hình, kiểm tra dữ liệu, ghi log, xử lý ngoại lệ và kiểm tra tình trạng dịch vụ.
-
-Chỉ bổ sung module phù hợp với phạm vi đã được nhóm thống nhất.
-
-### Luồng xử lý yêu cầu
-
-1. Client gửi yêu cầu đến REST API.
-2. API kiểm tra dữ liệu, xác thực và phân quyền khi cần.
-3. Controller chuyển yêu cầu đến tầng xử lý nghiệp vụ.
-4. Service áp dụng quy tắc và truy cập dữ liệu thông qua lớp dữ liệu được lựa chọn.
-5. API trả về phản hồi hoặc lỗi theo định dạng thống nhất.
-
-Giữ Controller gọn nhẹ, tránh lặp lại quy tắc nghiệp vụ ở Frontend.
+### Luồng xử lý yêu cầu chuẩn:
+1. Client gửi yêu cầu REST API kèm Bearer JWT.
+2. `JwtAuthGuard` và `ValidationPipe` thẩm định tính hợp lệ của token và dữ liệu đầu vào.
+3. Controller định tuyến yêu cầu sang tầng Service nghiệp vụ.
+4. Service áp dụng quy tắc kinh doanh, thực thi Database Transaction qua `PrismaService`.
+5. API phản hồi kết quả thống nhất theo chuẩn REST JSON.
 
 ## 6. Tính toàn vẹn dữ liệu
 
-- PostgreSQL là cơ sở dữ liệu quan hệ dự kiến tích hợp.
-- Sử dụng ràng buộc cơ sở dữ liệu kết hợp với kiểm tra dữ liệu phía máy chủ.
-- Sử dụng transaction khi một nghiệp vụ cập nhật nhiều bản ghi liên quan, ví dụ đơn hàng và các dòng sản phẩm.
-- Công nghệ ORM/lớp truy cập dữ liệu chưa được xác nhận; xem [ADR-002](adr/002-orm-selection.md).
-- Quy tắc trạng thái đơn hàng cần được xác nhận; xem [ADR-003](adr/003-state-machine.md).
+- **Cơ sở dữ liệu:** PostgreSQL 16+ có cấu hình lưu trữ bền vững (Persistent Volume).
+- **ORM & Migration:** Sử dụng **Prisma ORM** với quy trình migration tự động và có phiên bản rõ ràng (xem [ADR-002](adr/002-orm-selection.md)).
+- **Database Transaction:** Áp dụng `prisma.$transaction()` cho toàn bộ luồng tạo đơn và thanh toán, bảo đảm tính toàn vẹn (ACID): tạo `Order`, các dòng `OrderItem` và cập nhật `stock` thành công trọn vẹn hoặc rollback toàn bộ khi có lỗi.
+- **Optimistic Locking:** Sử dụng trường `version` trong bảng `Product` để ngăn chặn bán vượt số lượng tồn kho thực tế khi có nhiều yêu cầu đồng thời.
 
 ## 7. Các mối quan tâm xuyên suốt
 
 ### Bảo mật
+- Kiểm tra dữ liệu đầu vào nghiêm ngặt bằng `class-validator` tại Backend.
+- Phân quyền theo vai trò (Role-based Access Control - RBAC) ở mức API endpoint.
+- Băm mật khẩu bằng `bcrypt` với salt rounds phù hợp, không lưu plain text.
+- Phân tách biến môi trường công khai của Client (`NEXT_PUBLIC_API_URL`) và bí mật Backend (`DATABASE_URL`, `JWT_SECRET`).
+- Không commit file `.env` lên Git; chỉ cung cấp tệp mẫu `.env.example`.
 
-- Kiểm tra dữ liệu đầu vào tại Backend.
-- Thực hiện phân quyền tại các API.
-- Sử dụng thuật toán/thư viện băm mật khẩu được duy trì và cấu hình phù hợp.
-- Lưu bí mật trong cấu hình môi trường hoặc hệ thống quản lý bí mật, không đưa lên Git.
-- Sử dụng HTTPS khi triển khai thực tế và cấp quyền dịch vụ theo nguyên tắc tối thiểu.
-- Không lưu thông tin thẻ trong quy trình thanh toán mô phỏng.
+### Lỗi và Ghi log
+- Bộ lọc lỗi toàn cục chuẩn hóa phản hồi JSON, tuyệt đối không để lộ stack trace hay thông tin máy chủ nội bộ.
+- Ghi log có cấu trúc qua standard output (`stdout`/`stderr`), dễ dàng thu thập bởi Docker logging driver hoặc cloud monitor.
+- Không log mật khẩu, token hoặc mã giao dịch nhạy cảm.
 
-### Lỗi và ghi log
+### Health Check và Quản lý Cấu hình
+- Cung cấp endpoint `GET /health` để nhà cung cấp dịch vụ đám mây (PaaS) tự động kiểm tra tình trạng sống (liveness) và sẵn sàng (readiness).
+- Tự động restart container khi gặp lỗi nghiêm trọng (Zero-downtime deployment).
 
-- Trả về định dạng lỗi nhất quán, không để lộ stack trace hoặc thông tin nội bộ.
-- Ghi nhận sự kiện vận hành cần thiết; sử dụng request ID/correlation ID khi phù hợp.
-- Không ghi log mật khẩu, token hoặc thông tin thanh toán nhạy cảm.
+## 8. Chất lượng và Đánh đổi (Trade-offs)
 
-### Kiểm tra tình trạng và cấu hình
+| Khía cạnh | Quyết định kỹ thuật | Ưu điểm đạt được | Đánh đổi / Biện pháp kiểm soát |
+|---|---|---|---|
+| **Cấu trúc Repo** | Monorepo (ADR-001) | Dễ đồng bộ API - UI, quy trình review tập trung | Cần thiết lập Branch protection và CI path filtering |
+| **Kiến trúc App** | Modular Monolith | Đơn giản, dễ debug, triển khai nhanh, phù hợp quy mô MVP | Khả năng scale từng phần thấp hơn microservices; bù lại kiến trúc module hóa giúp dễ tách service sau này nếu cần |
+| **ORM / Database** | Prisma ORM (ADR-002) | Type-safe tuyệt đối, schema trực quan, migration tự động | Cần chạy bước `prisma generate` và `prisma migrate` trong CI/CD build |
+| **Vòng đời đơn** | State Machine (ADR-003) | Dữ liệu đơn hàng nhất quán, chống nhảy cóc trạng thái | Phải viết guard kiểm tra chặt chẽ ở mọi endpoint cập nhật đơn |
+| **Thanh toán** | Mock Adapter + Idempotency | Không phụ thuộc ngân hàng thật, chống trừ tiền 2 lần khi rớt mạng | Cần duy trì bảng khóa `idempotency_keys` có thời hạn hết hạn (TTL) |
 
-- Xác định endpoint kiểm tra tình trạng hoạt động và mức độ sẵn sàng khi cần.
-- Kiểm tra biến môi trường bắt buộc khi khởi động.
-- Tách biệt cấu hình local, CI và production.
-- Chỉ commit `.env.example` với giá trị mẫu, không commit bí mật thật.
+## 9. Danh mục Quyết định Kiến trúc (ADR)
 
-## 8. Chất lượng và đánh đổi
+Tất cả các quyết định kiến trúc đã được phê duyệt và lưu trữ chính thức:
+- [ADR-001: Tổ chức Repository theo Monorepo](adr/001-monorepo.md) — **Accepted**
+- [ADR-002: Lựa chọn lớp truy cập dữ liệu và ORM](adr/002-orm-selection.md) — **Accepted**
+- [ADR-003: Quy định chuyển trạng thái đơn hàng](adr/003-state-machine.md) — **Accepted**
 
-| Mối quan tâm | Hướng xử lý đề xuất | Đánh đổi |
-|---|---|---|
-| Khả năng bảo trì | Module rõ trách nhiệm, Controller gọn | Cần kiểm soát phụ thuộc giữa module |
-| Đơn giản | Một Backend deployment | Khả năng mở rộng độc lập thấp hơn microservices |
-| Bảo mật | Kiểm tra dữ liệu, phân quyền, quản lý bí mật | Tăng công sức triển khai và review |
-| Toàn vẹn | Ràng buộc và transaction phù hợp | Cần quản lý migration và transaction cẩn thận |
-| Kiểm thử | Unit test cho Service và API integration test | Cần dữ liệu kiểm thử ổn định |
-| Triển khai | Docker khi được cấu hình | Container không tự đảm bảo bảo mật/vận hành |
+## 10. Trạng thái Đồng thuận của Nhóm
 
-## 9. Danh mục ADR
-
-- [ADR-001: Tổ chức Repository theo Monorepo](adr/001-monorepo.md)
-- [ADR-002: Lựa chọn lớp truy cập dữ liệu / ORM](adr/002-orm-selection.md)
-- [ADR-003: Quy định chuyển trạng thái đơn hàng](adr/003-state-machine.md)
-
-## 10. Danh sách cần xác nhận
-
-- [ ] Đối chiếu sơ đồ và module với repository hiện tại.
-- [ ] Xác nhận tình trạng tích hợp PostgreSQL.
-- [ ] Xác nhận ORM và quy trình migration.
-- [ ] Xác nhận vòng đời đơn hàng và xử lý thanh toán mô phỏng.
-- [ ] Xác nhận mô hình xác thực và phân quyền.
-- [ ] Xác nhận health check, logging, biến môi trường và Docker.
-- [ ] Nhận review của nhóm và cập nhật trạng thái tài liệu.
+- [x] Đã thống nhất cấu trúc Monorepo và quy trình làm việc trên Git.
+- [x] Đã chốt lựa chọn PostgreSQL và Prisma ORM cùng cơ chế tự động migration.
+- [x] Đã phê duyệt mô hình Máy trạng thái 7 trạng thái cho vòng đời đơn hàng.
+- [x] Đã xác định rõ luồng bảo mật, biến môi trường, health check và kiến trúc triển khai trên Docker/Cloud PaaS.

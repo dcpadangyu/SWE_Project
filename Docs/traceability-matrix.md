@@ -2,12 +2,12 @@
 
 ### Quy ước định danh sơ đồ và tài liệu thiết kế
 
-- **UseCase-01:** Sơ đồ use-case tổng quát (`docs/diagrams/usecase-overview.puml`)
-- **Activity-01:** Sơ đồ hoạt động luồng đặt món & thanh toán (`docs/diagrams/activity-checkout.puml`)
-- **Sequence-01:** Sơ đồ tuần tự luồng checkout trọng tâm (`docs/diagrams/sequence-checkout.puml`)
-- **Class-01:** Sơ đồ lớp miền domain model (`docs/diagrams/class-domain.puml`)
-- **Deployment-01:** Sơ đồ triển khai production (`docs/diagrams/deployment.puml`)
-- **Architecture-01:** Tài liệu thiết kế kiến trúc hệ thống (`docs/architecture/README.md`)
+- **UseCase-01:** Sơ đồ use-case tổng quát (`Docs/diagrams/usecase-overview.puml`)
+- **Activity-01:** Sơ đồ hoạt động luồng đặt món & thanh toán (`Docs/diagrams/activity-checkout.puml`)
+- **Sequence-01:** Sơ đồ tuần tự luồng checkout trọng tâm (`Docs/diagrams/sequence-checkout.puml`)
+- **Class-01:** Sơ đồ lớp miền domain model (`Docs/diagrams/class-domain.puml`)
+- **Deployment-01:** Sơ đồ triển khai production (`Docs/diagrams/deployment.puml`)
+- **Architecture-01:** Tài liệu thiết kế kiến trúc hệ thống (`Docs/architecture/README.md`)
 
 ---
 
@@ -41,7 +41,7 @@
 | NFR-09     | NFR-09 Xử lý ngoại lệ tập trung            | Sequence-01, Architecture-01       | AllExceptionsFilter                 | T24  |
 | NFR-10     | NFR-10 Tính nhất quán dữ liệu đơn hàng     | Sequence-01                        | Database Transaction ($transaction) | T25  |
 | NFR-11     | NFR-11 Khôi phục dữ liệu sau sự cố         | Deployment-01                      | Docker Volume (postgres_data)       | T26  |
-| NFR-12     | NFR-12 Cấu trúc phân lớp module rõ ràng    | Architecture-01                    | apps/api/src, apps/web/src          | T27  |
+| NFR-12     | NFR-12 Cấu trúc phân lớp module rõ ràng    | Architecture-01                    | backend/src, frontend/app           | T27  |
 | NFR-13     | NFR-13 Tính nhất quán định dạng mã nguồn   | Architecture-01                    | .prettierrc, .oxlintrc.json         | T28  |
 | NFR-14     | NFR-14 Kiểm thử chức năng trọng yếu        | Architecture-01                    | Jest Unit, Integration, E2E Test    | T29  |
 | NFR-15     | NFR-15 Đóng gói môi trường bằng Docker     | Deployment-01                      | Dockerfile, docker-compose.yml      | T30  |

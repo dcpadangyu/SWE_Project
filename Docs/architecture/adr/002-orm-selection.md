@@ -1,46 +1,51 @@
 # ADR-002: Lựa chọn lớp truy cập dữ liệu và ORM
 
-- **Trạng thái:** Đề xuất, đang chờ quyết định
+- **Trạng thái:** Đã chấp thuận (Accepted)
 - **Ngày:** 24-10-2026
-- **Người quyết định:** Nhóm dự án
+- **Người quyết định:** Toàn bộ thành viên nhóm dự án BrewLite
 
 ## 1. Bối cảnh
 
-BrewLite dự kiến sử dụng PostgreSQL với Backend NestJS và TypeScript.
+Hệ thống BrewLite sử dụng cơ sở dữ liệu quan hệ **PostgreSQL** với Backend **NestJS** và **TypeScript**. 
 
-Việc lựa chọn ORM hoặc lớp truy cập dữ liệu cần cân nhắc các thư viện hiện có, mức độ quen thuộc của nhóm, nhu cầu migration và yêu cầu của môn học.
+Backend cần một lớp truy cập dữ liệu (Data Access Layer / ORM) để:
+- Ánh xạ các thực thể nghiệp vụ (Domain Models: User, Product, Order, OrderItem, Payment, Voucher, LoyaltyTransaction).
+- Quản lý lược đồ dữ liệu và tự động hóa cơ chế Migration qua các phiên bản.
+- Thực thi Transaction an toàn cho quy trình tạo đơn và trừ tồn kho (NFR-10).
+- Hỗ trợ kiểm soát đồng thời (Optimistic Locking) khi nhiều khách cùng đặt món cuối cùng.
 
 ## 2. Quyết định
 
-**Chưa có quyết định chính thức.**
+Nhóm thống nhất quyết định lựa chọn **Prisma ORM** làm công nghệ truy cập dữ liệu và quản lý migration chính thức cho dự án BrewLite.
 
-ADR này chưa khẳng định Prisma, TypeORM hoặc thư viện nào khác đã được lựa chọn.
+## 3. Các phương án đã đánh giá
 
-## 3. Các phương án cần đánh giá
+1. **Prisma ORM (Được chọn):** Mô hình Schema-first, tự động sinh Type-safe Client và công cụ migration mạnh mẽ.
+2. **TypeORM (Bị loại):** Mô hình Entity-first với decorator truyền thống của NestJS; tuy nhiên cấu hình migration phức tạp và dễ phát sinh lỗi đồng bộ lược đồ.
+3. **Raw SQL / Knex.js (Bị loại):** Kiểm soát truy vấn ở mức thấp nhất nhưng tốn nhiều công sức ánh xạ dữ liệu thủ công, thiếu tính an toàn kiểu dữ liệu và tăng nguy cơ lỗi bảo mật.
 
-- **Prisma:** Cung cấp mô hình schema, client và quy trình migration.
-- **TypeORM:** Sử dụng mô hình Entity/Repository và có khả năng tích hợp với NestJS.
-- **SQL-first hoặc phương án khác:** Chỉ lựa chọn nếu phù hợp với yêu cầu và kỹ năng của nhóm.
+## 4. Lý do lựa chọn Prisma
 
-## 4. Tiêu chí lựa chọn
-
-1. Thư viện đã được cài đặt hoặc cấu hình trong Backend.
-2. Mức độ quen thuộc và khả năng bảo trì của nhóm.
-3. Quy trình migration và review schema.
-4. Khả năng xử lý transaction khi tạo đơn hàng và các bản ghi liên quan.
-5. Khả năng kiểm thử và tương thích PostgreSQL.
-6. Yêu cầu môn học và chất lượng tài liệu hướng dẫn.
+- **Schema khai báo trực quan (`schema.prisma`):** Lược đồ cơ sở dữ liệu được định nghĩa tập trung tại một tệp duy nhất, rõ ràng, dễ đối chiếu trực tiếp với sơ đồ lớp thực thể (Class Diagram) và SRS.
+- **Type-safety tuyệt đối:** Prisma Client tự động sinh mã TypeScript từ schema, bảo đảm mọi câu truy vấn đều được kiểm tra kiểu chặt chẽ ngay trong quá trình biên dịch (compile-time), loại bỏ hoàn toàn các lỗi sai tên cột hoặc sai kiểu dữ liệu.
+- **Cơ chế Migration tự động và có phiên bản:**
+  - Trong môi trường phát triển (Local): Dùng lệnh `npx prisma migrate dev` để tự động tạo và áp dụng các tệp migration SQL có gắn mốc thời gian.
+  - Trong môi trường vận hành (CI/Production): Dùng lệnh `npx prisma migrate deploy` để áp dụng tuần tự các migration chưa chạy trước khi ứng dụng khởi động.
+  - Mọi lịch sử migration được lưu trữ an toàn trong bảng quản trị `_prisma_migrations`.
+- **Hỗ trợ Transaction và Optimistic Locking:**
+  - Hỗ trợ phương thức `prisma.$transaction()` giúp gom các thao tác tạo bản ghi `Order`, `OrderItem` và trừ tồn kho `Product` thành một giao dịch duy nhất, tự động Rollback khi có lỗi.
+  - Dễ dàng triển khai Optimistic Locking thông qua trường `version` trên bảng `Product` (`prisma.product.update({ where: { id, version }, data: { stock: { decrement: qty }, version: { increment: 1 } } })`).
 
 ## 5. Hệ quả
 
-Lựa chọn này ảnh hưởng đến định nghĩa schema, migration, mô hình repository, thiết lập kiểm thử và quy trình hướng dẫn thành viên mới.
+### Lợi ích
 
-Việc thay đổi công nghệ ở giai đoạn sau có thể yêu cầu tái cấu trúc mã nguồn và rà soát migration.
+- Tăng tốc độ phát triển và giảm thiểu tối đa lỗi runtime liên quan đến database.
+- Cơ chế migration minh bạch, dễ dàng kiểm tra và review trên Pull Request.
+- Tích hợp mượt mà với NestJS thông qua một `PrismaService` dùng chung.
 
-## 6. Việc cần thực hiện
+### Biện pháp kiểm soát
 
-- [ ] Kiểm tra `package.json` của Backend.
-- [ ] Kiểm tra lockfile và các thư viện đã cài đặt.
-- [ ] Kiểm tra cấu hình cơ sở dữ liệu hiện tại.
-- [ ] Thảo luận và xác nhận công nghệ được nhóm lựa chọn.
-- [ ] Cập nhật ADR bằng quyết định chính thức và lý do lựa chọn.
+- Bổ sung `prisma` vào `devDependencies` và `@prisma/client` vào `dependencies` của backend.
+- Tạo một `PrismaModule` / `PrismaService` kế thừa `PrismaClient` và quản lý vòng đời kết nối (`onModuleInit`, `onModuleDestroy`).
+- Cấu hình bước chạy migration tự động trong Dockerfile / quy trình release trước khi gọi lệnh `node dist/main`.

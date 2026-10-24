@@ -1,71 +1,12 @@
 @startuml sequence-checkout
 title Sequence Diagram - Đặt và thanh toán đơn hàng (UC-CHECKOUT-01, Task 2.2)
+autonumber
 
 actor "Khách hàng\n(Customer)" as Customer
 participant "Next.js UI\n(PWA, mobile-first)" as UI
-participant "Giỏ hàng\n(Cart Store, client)" as Cart
 participant "NestJS API\n(Guard · Pipe · Service)" as API
 database "Database\n(PostgreSQL)" as DB
 participant "Payment Service\n(Mock Gateway)" as PAY
-
-== Giai đoạn 0 - Đặt món: xem menu, chọn tùy chọn, thêm vào giỏ (Bước 1-2 của Happy Path) ==
-
-Customer -> UI : 0.1 Mở ứng dụng, vào màn hình Menu
-UI -> API : GET /products
-API -> DB : SELECT products
-DB --> API : danh sách sản phẩm
-API --> UI : 200 OK [products]
-alt Lỗi mạng / API lỗi
-  UI --> Customer : Hiển thị trạng thái lỗi và nút "Thử lại"
-else Danh sách rỗng
-  UI --> Customer : Hiển thị trạng thái rỗng (empty state)
-else Có sản phẩm
-  UI --> Customer : Hiển thị menu (loading xong)
-end
-Customer -> UI : 0.2 Chọn một món (ví dụ Cappuccino)
-UI -> API : GET /products/{id}
-API -> DB : SELECT product, sizes, toppings WHERE id
-DB --> API : chi tiết sản phẩm
-alt Sản phẩm không tồn tại / hết hàng
-  API --> UI : 404 Not Found
-  UI --> Customer : Báo "Sản phẩm không còn", về Menu
-else Tìm thấy
-  API --> UI : 200 OK {product, sizes[], toppings[]}
-  UI --> Customer : Hiển thị chi tiết: size S/M/L, topping, giá tương ứng
-end
-Customer -> UI : 0.3 Chọn size, topping, số lượng, bấm "Thêm vào giỏ"
-UI -> Cart : addItem(productId, size, toppings[], qty)\n(gộp dòng nếu trùng cấu hình)
-Cart --> UI : Giỏ mới + tổng tạm tính
-UI --> Customer : Cập nhật badge số lượng và tổng tiền
-note right of Cart : Giỏ hàng lưu ở client (state + localStorage).\nBackend chỉ biết giỏ khi nhận POST /orders.
-opt Sửa / xóa món trong giỏ (A2)
-  Customer -> UI : 0.4 Đổi size, topping, số lượng hoặc xóa món
-  UI -> Cart : updateItem / removeItem
-  Cart --> UI : Giỏ mới + tổng tạm tính
-  UI --> Customer : Cập nhật danh sách, badge và tổng tiền
-end
-
-== Giai đoạn 0b - Đăng nhập (chỉ khi chưa có JWT, thường xảy ra sau nhánh E1) ==
-
-opt Chưa đăng nhập
-  Customer -> UI : 0.5 Nhập email, mật khẩu, bấm "Đăng nhập"
-  UI -> API : POST /auth/login {email, password}
-  API -> API : ValidationPipe: email đúng định dạng, mật khẩu không rỗng (NFR-07)
-  API -> DB : SELECT user WHERE email
-  DB --> API : user (password_hash)
-  API -> API : So khớp mật khẩu với hash (bcrypt / Argon2id - NFR-05)
-  alt Sai email hoặc mật khẩu
-    API --> UI : 401 Unauthorized
-    UI --> Customer : Báo "Email hoặc mật khẩu không đúng"
-  else Đúng thông tin
-    API -> API : Ký JWT (khóa bí mật từ biến môi trường - NFR-06)
-    API --> UI : 200 OK {accessToken}
-    UI -> UI : Lưu JWT trong phiên
-    UI --> Customer : Quay lại Giỏ hàng (giỏ còn nguyên)
-  end
-end
-
-autonumber
 
 == Giai đoạn 1 - Chuẩn bị thanh toán (Bước 3-4 của Happy Path) ==
 
@@ -160,7 +101,7 @@ else Đơn của tôi, trạng thái PENDING
         API -> DB : Lưu response 200 cho khóa K (IDEMPOTENCY: DONE)
         API -> DB : COMMIT
         API --> UI : 200 OK {orderId, status = PAID, total, loyaltyPointsEarned}
-        UI -> Cart : clear() - xóa giỏ hàng
+        UI -> UI : Xóa giỏ hàng
       end
     else Thanh toán thất bại - hết tiền, thẻ bị từ chối (E3)
       PAY --> API : 402 {code, reason}

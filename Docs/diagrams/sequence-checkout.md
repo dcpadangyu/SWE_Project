@@ -3,7 +3,7 @@
 - **Task:** 2.2 – Sequence diagram cho use case trọng tâm (Task 1.3)
 - **Use case:** UC-CHECKOUT-01 – Đặt món và Thanh toán không dùng tiền mặt (`use-case-checkout.md`)
 - **Tệp nguồn / kết xuất:** `sequence-checkout.puml` / `sequence-checkout.svg`
-- **Yêu cầu liên quan (SRS):** FR-02 → FR-14 (đăng nhập, menu, chi tiết, size/topping, giỏ hàng, tạo đơn, thanh toán, xác nhận) · NFR-03, NFR-05, NFR-06, NFR-07, NFR-09, NFR-10
+- **Yêu cầu liên quan (SRS):** FR-02, FR-12, FR-13, FR-14 · NFR-03, NFR-07, NFR-09, NFR-10
 
 ![Sequence Diagram Đặt và Thanh toán đơn hàng](sequence-checkout.svg)
 
@@ -14,8 +14,7 @@
 | Lifeline | Vai trò | Thành phần mã nguồn dự kiến |
 | :--- | :--- | :--- |
 | **Customer** | Khách hàng thao tác trên điện thoại/trình duyệt. | – |
-| **Next.js UI** | Giao diện PWA mobile-first: hiển thị menu/chi tiết, sinh `Idempotency-Key`, hiển thị loading/lỗi/xác nhận, lưu JWT. | `apps/web` (hoặc `frontend/`) |
-| **Giỏ hàng (Cart Store)** | Trạng thái giỏ hàng phía client (state + localStorage): thêm/sửa/xóa món, gộp dòng trùng, tính tạm tính, số lượng badge. Backend chỉ nhận giỏ khi `POST /orders`. | `apps/web`: store giỏ hàng (Zustand/Context) |
+| **Next.js UI** | Giao diện PWA mobile-first: giữ giỏ hàng, sinh `Idempotency-Key`, hiển thị loading/lỗi/xác nhận. | `apps/web` (hoặc `frontend/`) |
 | **NestJS API** | `JwtAuthGuard` (xác thực), `ValidationPipe` (validate DTO), `OrdersService`, `PaymentsService`. | `apps/api` (hoặc `backend/`): module `orders`, `payments`, `auth` |
 | **Database** | PostgreSQL: `orders`, `order_items`, `payments`, `products`, `users`, `loyalty_transactions`, `idempotency_keys`. | Migration / entity của backend |
 | **Payment Service** | Cổng thanh toán mô phỏng (Ví điện tử / Thẻ), hỗ trợ `Idempotency-Key` và hoàn tiền. | Mock Payment Gateway |
@@ -26,9 +25,6 @@
 
 | API | Header bắt buộc | Request | Response chính |
 | :--- | :--- | :--- | :--- |
-| `GET /products` | – | – | `200` `[products]` · lỗi/rỗng được UI xử lý bằng trạng thái error/empty |
-| `GET /products/:id` | – | – | `200` `{product, sizes[], toppings[]}` · `404` |
-| `POST /auth/login` | – | `{email, password}` | `200` `{accessToken}` · `400` · `401` |
 | `POST /orders` | `Authorization: Bearer <JWT>`, `Idempotency-Key` | `items[{productId, size, toppings[], qty}]`, `voucherCode?`, `paymentMethod` | `201` `{orderId, status: PENDING, total}` · `400` · `401` · `409` (hết hàng) |
 | `POST /payments` | `Authorization: Bearer <JWT>`, `Idempotency-Key` | `{orderId, method: WALLET \| CARD}` | `200` `{orderId, status: PAID, total, loyaltyPointsEarned}` · `202` (đang xử lý) · `402` (thanh toán thất bại) · `403`/`409` · `409` (hết hàng sau khi trả) |
 | `GET /orders/:id` | `Authorization: Bearer <JWT>` | – | `200` `{orderId, status, total, items[]}` (chỉ trả đơn của chính người dùng) |
@@ -41,22 +37,7 @@
 
 ## 3. Mô tả tuần tự các bước
 
-Số bước từ Giai đoạn 1 trở đi trùng với số tự động đánh trên sơ đồ. Giai đoạn 0 và 0b dùng nhãn `0.x` (ghi trên các thao tác của khách hàng).
-
-### Giai đoạn 0 – Đặt món: xem menu, chọn tùy chọn, thêm vào giỏ (Happy Path bước 1–2)
-
-| Nhãn | Mô tả |
-| :---: | :--- |
-| 0.1 | Khách mở ứng dụng vào Menu. UI gọi `GET /products`, API đọc `products` từ DB và trả danh sách. UI xử lý 3 trạng thái: **lỗi** (nút "Thử lại"), **rỗng** (empty state), **có sản phẩm** (hiển thị menu) – FR-03. |
-| 0.2 | Khách chọn một món. UI gọi `GET /products/:id`; API đọc sản phẩm, size, topping. Không tồn tại/hết bán → `404`, UI báo và về Menu. Tìm thấy → hiển thị size S/M/L, topping và giá – FR-04, FR-05. |
-| 0.3 | Khách chọn size, topping, số lượng và bấm **"Thêm vào giỏ"**. UI gọi `Cart Store.addItem(...)` (gộp dòng nếu trùng cấu hình), nhận lại giỏ mới và tổng tạm tính, cập nhật badge – FR-06, FR-10, FR-11. **Bước này không gọi API**: giỏ hàng nằm ở client. |
-| 0.4 | *(A2, tùy chọn)* Khách đổi size/topping/số lượng hoặc xóa món → `updateItem` / `removeItem`, tổng tiền và badge cập nhật – FR-08, FR-09. |
-
-### Giai đoạn 0b – Đăng nhập (chỉ khi chưa có JWT, thường xảy ra sau nhánh E1)
-
-| Nhãn | Mô tả |
-| :---: | :--- |
-| 0.5 | Khách nhập email, mật khẩu. UI gọi `POST /auth/login`. API validate dữ liệu (NFR-07), đọc `user` theo email, so khớp mật khẩu với hash (NFR-05). Sai → `401`. Đúng → ký JWT bằng khóa bí mật lấy từ biến môi trường (NFR-06), trả `200 {accessToken}`; UI lưu JWT và đưa khách về Giỏ hàng, **giỏ còn nguyên** – FR-02. |
+Số bước trong bảng trùng với số tự động đánh trên sơ đồ.
 
 ### Giai đoạn 1 – Chuẩn bị thanh toán (bước 1–6, Happy Path bước 3–4)
 
@@ -94,7 +75,7 @@ Số bước từ Giai đoạn 1 trở đi trùng với số tự động đánh
 | 43 | Cổng trả thành công `{transactionId, SUCCESS}`. |
 | 44–46 | **Bắt đầu transaction** cập nhật tồn kho bằng optimistic locking: `UPDATE products SET stock = stock - qty, version = version + 1 WHERE id AND version = :v AND stock >= qty`. |
 | 47–51 | *(E2b)* Cập nhật thất bại (hai khách tranh món cuối) → `ROLLBACK`, đơn `CANCELLED`, thanh toán `REFUNDED`, gọi `POST /refund`, trả `409 OUT_OF_STOCK`; UI báo hết hàng, đã hoàn tiền, giữ giỏ. |
-| 52–56 | Thành công → trong cùng transaction: `orders = PAID`, `payments = SUCCESS`, ghi `loyalty_transactions`, cộng `users.loyalty_points`, ghi nhận lượt dùng voucher; lưu response `200` cho khóa K; `COMMIT`; trả `200 {orderId, status: PAID, loyaltyPointsEarned}`; UI gọi `Cart Store.clear()` để xóa giỏ hàng. |
+| 52–56 | Thành công → trong cùng transaction: `orders = PAID`, `payments = SUCCESS`, ghi `loyalty_transactions`, cộng `users.loyalty_points`, ghi nhận lượt dùng voucher; lưu response `200` cho khóa K; `COMMIT`; trả `200 {orderId, status: PAID, loyaltyPointsEarned}`; UI xóa giỏ hàng. |
 | 57–60 | *(E3)* Cổng từ chối → `payments = FAILED`, `orders = PAYMENT_FAILED`, lưu response `402` cho khóa K; **không** trừ kho, **không** cộng điểm, **không** dùng voucher. UI báo lỗi, giữ giỏ, cho **"Thử lại"** / **"Đổi phương thức"**. Thử lại dùng **khóa K mới**, đơn `PAYMENT_FAILED → PENDING`, tối đa 3 lần; quá 3 lần → `CANCELLED`. |
 
 ### Giai đoạn 4 – Thông báo kết quả cuối cùng (bước 61–67, FR-14)
@@ -138,10 +119,6 @@ Chuyển trạng thái trong sơ đồ:
 
 | Nội dung trên sơ đồ | Luồng trong `use-case-checkout.md` | Yêu cầu / Tiêu chí chấp nhận |
 | :--- | :--- | :--- |
-| Xem menu (loading / empty / error) | Happy Path bước 1 | FR-03, NFR-08 |
-| Xem chi tiết, chọn size/topping, thêm vào giỏ | Happy Path bước 1–2 | FR-04, FR-05, FR-06, FR-10, FR-11 |
-| Sửa / xóa món trong giỏ | **A2** | FR-08, FR-09 |
-| Đăng nhập, nhận JWT | **E1** (sau khi chuyển `/login`) | FR-02, NFR-05, NFR-06, NFR-07 |
 | Bấm "Thanh toán", kiểm tra JWT, chuyển `/login` | Happy Path bước 3; **E1** | FR-02, NFR-03 |
 | Validate dữ liệu ở backend | Happy Path bước 4 | NFR-07, AC-12.2 |
 | Tạo đơn `PENDING`, tính lại tiền ở backend | Happy Path bước 4 | FR-12, AC-12.1, AC-12.3 |
