@@ -1,0 +1,91 @@
+@startuml usecase-overview
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam linetype ortho
+skinparam nodesep 40
+skinparam ranksep 50
+
+actor "Khách hàng\n(Customer)" as Customer
+
+rectangle "Hệ thống Đặt cà phê BrewLite" {
+
+  ' CỘT 1: TÀI KHOẢN & THỰC ĐƠN
+  together {
+    package "Tài khoản & Xác thực (Task 7)" as P_Auth {
+      usecase "Đăng ký tài khoản" as UC_Register
+      usecase "Đăng nhập & Nhận JWT" as UC_Login
+    }
+
+    package "Thực đơn & Giỏ hàng (Task 2, 3, 4, 5)" as P_Menu {
+      usecase "Xem danh sách thực đơn" as UC_ViewMenu
+      usecase "Xem chi tiết & Tùy chọn (Size/Topping)" as UC_CustomizeItem
+      usecase "Quản lý giỏ hàng\n(Thêm, sửa, xóa, tính tổng)" as UC_ManageCart
+    }
+  }
+
+  ' CỘT 2: ĐẶT HÀNG & LỊCH SỬ
+  together {
+    package "Đặt hàng & Thanh toán (Task 6, 8, 10)" as P_Checkout {
+      usecase "Tạo đơn hàng\n(POST /orders - PENDING)" as UC_CreateOrder
+      usecase "Thanh toán không tiền mặt\n(Ví/Thẻ)" as UC_Checkout
+      usecase "Áp mã giảm giá &\nTích lũy điểm (Loyalty)" as UC_Loyalty
+    }
+
+    package "Đơn hàng & Lịch sử (Task 9, 10)" as P_Orders {
+      usecase "Xem màn hình xác nhận đơn" as UC_OrderConfirmation
+      usecase "Xem lịch sử đơn hàng\n(GET /orders/me)" as UC_OrderHistory
+    }
+  }
+
+  ' CỘT 3: PHA CHẾ & QUẢN TRỊ
+  together {
+    package "Pha chế tại quầy (Task 10)" as P_Barista {
+      usecase "Tiếp nhận đơn pha chế\n(PAID -> PREPARING)" as UC_AcceptOrder
+      usecase "Cập nhật pha xong & Giao khách\n(READY -> COMPLETED)" as UC_CompleteOrder
+    }
+
+    package "Quản trị Hệ thống (Task 10)" as P_Admin {
+      usecase "Quản lý danh mục &\nTồn kho sản phẩm" as UC_ManageInventory
+    }
+  }
+
+}
+
+' CÁC ACTOR BÊN PHẢI
+actor "Cổng thanh toán\n(Mock Payment Gateway)" as MockPayment
+actor "Nhân viên pha chế\n(Barista)" as Barista
+actor "Quản lý / PO\n(Store Manager / PO)" as PO
+
+' --- CỐ ĐỊNH LAYOUT NGANG GIỮA CÁC CỘT ---
+P_Auth -[hidden]down-> P_Menu
+P_Checkout -[hidden]down-> P_Orders
+P_Barista -[hidden]down-> P_Admin
+
+P_Menu -[hidden]right-> P_Checkout
+P_Checkout -[hidden]right-> P_Barista
+
+' --- KẾT NỐI KHÁCH HÀNG (BÊN TRÁI) ---
+Customer --> UC_Register
+Customer --> UC_Login
+Customer --> UC_ViewMenu
+Customer --> UC_CustomizeItem
+Customer --> UC_ManageCart
+Customer --> UC_Checkout
+Customer --> UC_OrderConfirmation
+Customer --> UC_OrderHistory
+
+' --- QUAN HỆ INCLUDE / EXTEND ---
+UC_CustomizeItem .> UC_ManageCart : <<include>>
+UC_Checkout .> UC_CreateOrder : <<include>>
+UC_Checkout .> UC_Login : <<include>>
+UC_Checkout .> UC_OrderConfirmation : <<include>>
+UC_Loyalty .> UC_Checkout : <<extend>>
+
+' --- KẾT NỐI ACTOR BÊN PHẢI ---
+UC_Checkout --> MockPayment : Xử lý Idempotent
+Barista --> UC_AcceptOrder
+Barista --> UC_CompleteOrder
+PO --> UC_ManageInventory
+
+@enduml
