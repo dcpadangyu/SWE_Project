@@ -1,0 +1,190 @@
+@startuml sequence-checkout
+title Sequence Diagram - Đặt và thanh toán đơn hàng (UC-CHECKOUT-01, Task 2.2)
+
+actor "Khách hàng\n(Customer)" as Customer
+participant "Next.js UI\n(PWA, mobile-first)" as UI
+participant "Giỏ hàng\n(Cart Store, client)" as Cart
+participant "NestJS API\n(Guard · Pipe · Service)" as API
+database "Database\n(PostgreSQL)" as DB
+participant "Payment Service\n(Mock Gateway)" as PAY
+
+== Giai đoạn 0 - Đặt món: xem menu, chọn tùy chọn, thêm vào giỏ (Bước 1-2 của Happy Path) ==
+
+Customer -> UI : 0.1 Mở ứng dụng, vào màn hình Menu
+UI -> API : GET /products
+API -> DB : SELECT products
+DB --> API : danh sách sản phẩm
+API --> UI : 200 OK [products]
+alt Lỗi mạng / API lỗi
+  UI --> Customer : Hiển thị trạng thái lỗi và nút "Thử lại"
+else Danh sách rỗng
+  UI --> Customer : Hiển thị trạng thái rỗng (empty state)
+else Có sản phẩm
+  UI --> Customer : Hiển thị menu (loading xong)
+end
+Customer -> UI : 0.2 Chọn một món (ví dụ Cappuccino)
+UI -> API : GET /products/{id}
+API -> DB : SELECT product, sizes, toppings WHERE id
+DB --> API : chi tiết sản phẩm
+alt Sản phẩm không tồn tại / hết hàng
+  API --> UI : 404 Not Found
+  UI --> Customer : Báo "Sản phẩm không còn", về Menu
+else Tìm thấy
+  API --> UI : 200 OK {product, sizes[], toppings[]}
+  UI --> Customer : Hiển thị chi tiết: size S/M/L, topping, giá tương ứng
+end
+Customer -> UI : 0.3 Chọn size, topping, số lượng, bấm "Thêm vào giỏ"
+UI -> Cart : addItem(productId, size, toppings[], qty)\n(gộp dòng nếu trùng cấu hình)
+Cart --> UI : Giỏ mới + tổng tạm tính
+UI --> Customer : Cập nhật badge số lượng và tổng tiền
+note right of Cart : Giỏ hàng lưu ở client (state + localStorage).\nBackend chỉ biết giỏ khi nhận POST /orders.
+opt Sửa / xóa món trong giỏ (A2)
+  Customer -> UI : 0.4 Đổi size, topping, số lượng hoặc xóa món
+  UI -> Cart : updateItem / removeItem
+  Cart --> UI : Giỏ mới + tổng tạm tính
+  UI --> Customer : Cập nhật danh sách, badge và tổng tiền
+end
+
+== Giai đoạn 0b - Đăng nhập (chỉ khi chưa có JWT, thường xảy ra sau nhánh E1) ==
+
+opt Chưa đăng nhập
+  Customer -> UI : 0.5 Nhập email, mật khẩu, bấm "Đăng nhập"
+  UI -> API : POST /auth/login {email, password}
+  API -> API : ValidationPipe: email đúng định dạng, mật khẩu không rỗng (NFR-07)
+  API -> DB : SELECT user WHERE email
+  DB --> API : user (password_hash)
+  API -> API : So khớp mật khẩu với hash (bcrypt / Argon2id - NFR-05)
+  alt Sai email hoặc mật khẩu
+    API --> UI : 401 Unauthorized
+    UI --> Customer : Báo "Email hoặc mật khẩu không đúng"
+  else Đúng thông tin
+    API -> API : Ký JWT (khóa bí mật từ biến môi trường - NFR-06)
+    API --> UI : 200 OK {accessToken}
+    UI -> UI : Lưu JWT trong phiên
+    UI --> Customer : Quay lại Giỏ hàng (giỏ còn nguyên)
+  end
+end
+
+autonumber
+
+== Giai đoạn 1 - Chuẩn bị thanh toán (Bước 3-4 của Happy Path) ==
+
+Customer -> UI : Bấm "Thanh toán" tại màn hình Giỏ hàng
+alt Chưa có JWT trong phiên (E1)
+  UI --> Customer : Lưu giỏ hàng (localStorage), chuyển tới /login?redirect=/cart
+  note right of UI : Kết thúc nhánh. Sau khi đăng nhập,\nkhách quay lại Giỏ hàng và bấm "Thanh toán" lại.
+else Đã đăng nhập
+  UI --> Customer : Hiển thị màn hình Thanh toán (tổng tiền, chọn Ví / Thẻ)
+end
+Customer -> UI : Chọn phương thức (Ví điện tử / Thẻ), bấm "Xác nhận trả"
+alt Thiết bị đang offline (E4a)
+  UI --> Customer : Vô hiệu hóa nút, báo "Không có kết nối mạng"
+else Có mạng
+  UI -> UI : Khóa nút (loading, chống bấm đúp - E5)\nSinh Idempotency-Key K = UUID v4 cho lượt thanh toán này
+end
+
+== Giai đoạn 2 - Tạo đơn hàng PENDING (FR-12) ==
+
+UI -> API : POST /orders\nAuthorization: Bearer JWT, Idempotency-Key: K\n{items[{productId, size, toppings[], qty}], voucherCode?, paymentMethod}
+API -> API : JwtAuthGuard: kiểm tra chữ ký và thời hạn token (NFR-03)
+alt JWT thiếu / sai / hết hạn (E1)
+  API --> UI : 401 Unauthorized
+  UI --> Customer : Chuyển tới /login, giữ nguyên giỏ hàng
+else JWT hợp lệ
+  API -> API : ValidationPipe: items không rỗng, qty > 0, size thuộc S/M/L,\nphương thức hợp lệ (NFR-07)
+  alt Dữ liệu không hợp lệ
+    API --> UI : 400 Bad Request {errors[]}
+    UI --> Customer : Hiển thị lỗi, cho sửa giỏ hàng
+  else Dữ liệu hợp lệ
+    API -> DB : SELECT order WHERE user_id = me AND idempotency_key = K
+    DB --> API : kết quả
+    alt Đã có đơn với khóa K (client gửi lại - E4b)
+      API --> UI : 200 OK {orderId, status, total} (trả lại đơn cũ, không tạo mới)
+    else Chưa có đơn với khóa K
+      API -> DB : BEGIN TRANSACTION (NFR-10)
+      API -> DB : SELECT products, toppings, voucher (giá, stock, version) từ DB
+      DB --> API : dữ liệu sản phẩm
+      API -> API : Tính lại thành tiền, giảm giá, tổng tiền ở backend\n(không nhận tổng tiền từ client - AC-12.3)
+      alt Có món stock < qty (E2a)
+        API -> DB : ROLLBACK
+        API --> UI : 409 Conflict {outOfStock[{productId, remaining}]}
+        UI --> Customer : Báo "Món X chỉ còn N / đã hết", yêu cầu sửa giỏ (A2)
+      else Đủ hàng
+        API -> DB : INSERT orders (PENDING, total, idempotency_key = K)\nINSERT order_items (giá tại thời điểm đặt)
+        API -> DB : COMMIT
+        API --> UI : 201 Created {orderId, status = PENDING, total}
+      end
+    end
+  end
+end
+
+== Giai đoạn 3 - Thanh toán không tiền mặt, idempotent (FR-13) ==
+
+UI -> API : POST /payments\nAuthorization: Bearer JWT, Idempotency-Key: K\n{orderId, method = WALLET | CARD}
+API -> API : JwtAuthGuard + ValidationPipe (giống Giai đoạn 2)
+note right of API : Thất bại -> 401 / 400, UI xử lý như trên
+API -> DB : SELECT order WHERE id = orderId
+DB --> API : order
+alt Đơn của người khác / đã ở trạng thái kết thúc (AC-13.5)
+  API --> UI : 403 Forbidden hoặc 409 Conflict
+  UI --> Customer : Báo lỗi, về Lịch sử đơn hàng
+else Đơn của tôi, trạng thái PENDING
+  API -> DB : SELECT idempotency_keys WHERE user_id, endpoint = POST /payments, key = K
+  DB --> API : bản ghi khóa (nếu có)
+  alt Khóa K đã hoàn tất (gửi lại - E4b, E5)
+    API --> UI : Trả lại ĐÚNG response đã lưu (kèm header Idempotent-Replayed: true)
+    note right of API : Không gọi Payment Service lần nữa,\nkhông trừ tiền lần hai (AC-13.4)
+  else Khóa K đang xử lý (request song song)
+    API --> UI : 409 Conflict "Đang xử lý"
+    UI --> Customer : Hiển thị "Đang xác nhận kết quả..."
+  else Khóa K mới
+    API -> DB : INSERT idempotency_keys (K, IN_PROGRESS)\nINSERT payments (PENDING, amount, method)
+    API -> PAY : POST /charge {amount, method}\nIdempotency-Key: K
+    alt Cổng thanh toán timeout (E4c)
+      PAY --x API : Không phản hồi trong thời gian cho phép
+      API --> UI : 202 Accepted {status = PENDING, message = "Đang xử lý"}
+      UI --> Customer : "Đang xác nhận kết quả...", tự gửi lại với CÙNG khóa K\n(tối đa vài lần, giãn cách tăng dần)
+    else Thanh toán thành công
+      PAY --> API : 200 {transactionId, status = SUCCESS}
+      API -> DB : BEGIN TRANSACTION (NFR-10)
+      API -> DB : UPDATE products SET stock = stock - qty, version = version + 1\nWHERE id = :id AND version = :v AND stock >= qty (optimistic locking)
+      DB --> API : số dòng cập nhật
+      alt Cập nhật tồn kho thất bại (tranh món cuối cùng - E2b)
+        API -> DB : ROLLBACK
+        API -> DB : UPDATE orders SET CANCELLED; UPDATE payments SET REFUNDED\nLưu response 409 cho khóa K
+        API -> PAY : POST /refund {transactionId}
+        API --> UI : 409 Conflict {code = OUT_OF_STOCK, status = CANCELLED}
+        UI --> Customer : Báo hết hàng, đã hoàn tiền, giữ giỏ hàng để chọn món khác
+      else Trừ tồn kho thành công
+        API -> DB : UPDATE orders SET PAID; UPDATE payments SET SUCCESS (transactionId)\nINSERT loyalty_transactions; UPDATE users.loyalty_points; ghi nhận lượt dùng voucher
+        API -> DB : Lưu response 200 cho khóa K (IDEMPOTENCY: DONE)
+        API -> DB : COMMIT
+        API --> UI : 200 OK {orderId, status = PAID, total, loyaltyPointsEarned}
+        UI -> Cart : clear() - xóa giỏ hàng
+      end
+    else Thanh toán thất bại - hết tiền, thẻ bị từ chối (E3)
+      PAY --> API : 402 {code, reason}
+      API -> DB : UPDATE payments SET FAILED; UPDATE orders SET PAYMENT_FAILED\nLưu response 402 cho khóa K
+      note right of API : Không trừ tồn kho, không cộng điểm, không dùng voucher
+      API --> UI : 402 Payment Required {code, message}
+      UI --> Customer : Báo lỗi, giữ giỏ hàng, hiện "Thử lại" / "Đổi phương thức"
+      note over UI, API : Thử lại = khóa K mới, đơn PAYMENT_FAILED -> PENDING, tối đa 3 lần;\nquá 3 lần: đơn CANCELLED, khách về Giỏ hàng.
+    end
+  end
+end
+
+== Giai đoạn 4 - Thông báo kết quả cuối cùng (FR-14) ==
+
+UI -> API : GET /orders/{orderId}\nAuthorization: Bearer JWT
+API -> DB : SELECT order, order_items WHERE id AND user_id = me
+DB --> API : order
+API --> UI : 200 OK {orderId, status, total, items[]}
+alt status = PAID
+  UI --> Customer : Màn hình xác nhận: dấu tick, mã đơn #id, trạng thái PAID,\n"Mời tới quầy lấy nước", nút "Về trang chủ" / "Xem lịch sử"
+else status = PAYMENT_FAILED hoặc CANCELLED
+  UI --> Customer : Thông báo lỗi rõ ràng và nút "Thử lại" / "Về giỏ hàng"
+else status = PENDING (chưa có kết quả)
+  UI --> Customer : "Chưa xác nhận được thanh toán", nút kiểm tra lại;\nxem trạng thái tại Lịch sử đơn hàng
+end
+
+@enduml
