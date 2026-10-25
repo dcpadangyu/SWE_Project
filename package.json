@@ -1,0 +1,8 @@
+{
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9"
+  }
+}

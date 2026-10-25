@@ -1,0 +1,52 @@
+# Installed dependencies (root and workspaces)
+node_modules/
+
+# Build output and caches
+dist/
+build/
+.next/
+out/
+.cache/
+.turbo/
+*.tsbuildinfo
+
+# Local environment files; keep shareable examples
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs and test output
+logs/
+*.log
+coverage/
+.nyc_output/
+*.lcov
+
+# Local credentials and private keys
+*.pem
+*.key
+.aws/
+
+# Local database storage and backups (do not ignore Prisma migration SQL)
+/pgdata/
+/backups/
+*.dump
+
+# Deployment metadata
+.vercel/
+.netlify/
+
+# OS and local editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+.tmp/
+.temp/
+*.tmp
+
