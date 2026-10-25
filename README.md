@@ -93,8 +93,9 @@ Backend NestJS được tổ chức thành các Module nghiệp vụ phân đị
 
 ### 3.4. Vòng đời Trạng thái Đơn hàng (Order State Machine)
 Đơn hàng được quản lý chặt chẽ qua **7 trạng thái chuẩn mực**:
-$$\text{PENDING} \longrightarrow \text{PAID} \longrightarrow \text{PREPARING} \longrightarrow \text{READY} \longrightarrow \text{COMPLETED}$$
-$$\text{PENDING} \longrightarrow \text{PAYMENT\_FAILED} \longleftrightarrow \text{PENDING} \quad (\text{hoặc } \text{CANCELLED})$$
+- **Luồng thành công:** `PENDING` → `PAID` → `PREPARING` → `READY` → `COMPLETED`
+- **Luồng lỗi / Thử lại:** `PENDING` → `PAYMENT_FAILED` ↔ `PENDING` *(hoặc rẽ nhánh sang `CANCELLED`)*
+- **Trạng thái kết thúc:** `COMPLETED` *(Hoàn tất)* và `CANCELLED` *(Hủy đơn)*
 
 ---
 
