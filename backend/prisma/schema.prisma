@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Model Danh mục
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("categories")
+}
+
+// 2. Model Sản phẩm (Đồ uống) - Tuân thủ class-domain.md
+model Product {
+  id             String    @id @default(uuid())
+  name           String
+  description    String?
+  imageUrl       String?
+  
+  // Giá theo 3 kích thước (S/M/L) - M là mặc định
+  priceS         Decimal   @db.Decimal(10, 2)
+  priceM         Decimal   @db.Decimal(10, 2)
+  priceL         Decimal   @db.Decimal(10, 2)
+
+  // Danh sách topping hợp lệ lưu dạng JSON: [{ id, name, price, isAvailable }]
+  toppingOptions Json      @default("[]")
+
+  // Tồn kho & trạng thái
+  stock          Int       @default(0)
+  isAvailable    Boolean   @default(true)
+  
+  // Dùng cho Optimistic Locking sau này
+  version        Int       @default(0)
+
+  // Khóa ngoại liên kết Danh mục
+  categoryId     String
+  category       Category  @relation(fields: [categoryId], references: [id])
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("products")
+}
