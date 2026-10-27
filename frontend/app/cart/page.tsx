@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import type { CartItem as CartItemType } from '@/types/brewlite';
 import CartItem from '@/components/CartItem';
 import { useCartStore } from '@/stores/cartStore';
 
@@ -11,28 +12,75 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
+const sampleItems: CartItemType[] = [
+  {
+    id: 'sample-cappuccino-m',
+    productId: 'sample-cappuccino',
+    productName: 'Cappuccino',
+    size: 'M',
+    selectedToppings: [],
+    unitPrice: 45000,
+    quantity: 1,
+    subtotal: 45000,
+  },
+  {
+    id: 'sample-peach-tea-l',
+    productId: 'sample-peach-tea',
+    productName: 'Trà đào',
+    size: 'L',
+    selectedToppings: [
+      { id: 'sample-pearl', name: 'Trân châu', price: 5000 },
+    ],
+    unitPrice: 44000,
+    quantity: 2,
+    subtotal: 88000,
+  },
+];
+
 export default function CartPage() {
   const items = useCartStore((state) => state.items);
+  const addItem = useCartStore((state) => state.addItem);
   const removeItem = useCartStore((state) => state.removeItem);
   const updateQuantity = useCartStore((state) => state.updateQuantity);
   const clearCart = useCartStore((state) => state.clearCart);
   const totalQuantity = useCartStore((state) => state.getTotalQuantity());
   const totalAmount = useCartStore((state) => state.getTotalAmount());
 
+  const sampleControls = (
+    <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-3">
+      <p className="text-xs font-semibold text-amber-900">Dữ liệu mẫu để test Cart</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {sampleItems.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => addItem(item)}
+            className="rounded-lg bg-amber-800 px-3 py-2 text-xs font-bold text-white hover:bg-amber-900"
+          >
+            + {item.productName} {item.size}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   if (items.length === 0) {
     return (
-      <section className="flex min-h-[60vh] flex-col items-center justify-center rounded-2xl bg-slate-50 p-6 text-center">
-        <div className="text-5xl">🛒</div>
-        <h1 className="mt-4 text-xl font-black text-slate-900">Giỏ hàng đang trống</h1>
-        <p className="mt-2 max-w-xs text-sm text-slate-500">
-          Hãy chọn món yêu thích từ menu để bắt đầu đặt hàng.
-        </p>
-        <Link
-          href="/"
-          className="mt-5 rounded-lg bg-amber-800 px-5 py-3 text-sm font-bold text-white hover:bg-amber-900"
-        >
-          Xem menu
-        </Link>
+      <section className="space-y-4">
+        <div className="flex min-h-[45vh] flex-col items-center justify-center rounded-2xl bg-slate-50 p-6 text-center">
+          <div className="text-5xl">🛒</div>
+          <h1 className="mt-4 text-xl font-black text-slate-900">Giỏ hàng đang trống</h1>
+          <p className="mt-2 max-w-xs text-sm text-slate-500">
+            Hãy chọn món yêu thích từ menu để bắt đầu đặt hàng.
+          </p>
+          <Link
+            href="/"
+            className="mt-5 rounded-lg bg-amber-800 px-5 py-3 text-sm font-bold text-white hover:bg-amber-900"
+          >
+            Xem menu
+          </Link>
+        </div>
+        {sampleControls}
       </section>
     );
   }
@@ -63,6 +111,8 @@ export default function CartPage() {
           />
         ))}
       </div>
+
+      {sampleControls}
 
       <div className="rounded-xl bg-amber-50 p-4">
         <div className="flex items-center justify-between text-base font-bold text-slate-900">

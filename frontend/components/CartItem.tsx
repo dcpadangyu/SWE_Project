@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { CartItem as CartItemType } from '@/types/brewlite';
 
 type CartItemProps = {
@@ -20,6 +21,25 @@ export default function CartItem({
   onRemove,
   onUpdateQuantity,
 }: CartItemProps) {
+  const [quantityInput, setQuantityInput] = useState(String(item.quantity));
+
+  const commitQuantity = () => {
+    const quantity = Number(quantityInput);
+
+    if (Number.isInteger(quantity) && quantity > 0) {
+      onUpdateQuantity(item.id, quantity);
+      setQuantityInput(String(quantity));
+      return;
+    }
+
+    setQuantityInput(String(item.quantity));
+  };
+
+  const changeQuantity = (quantity: number) => {
+    onUpdateQuantity(item.id, quantity);
+    setQuantityInput(String(quantity));
+  };
+
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex gap-3">
@@ -59,18 +79,31 @@ export default function CartItem({
             <div className="flex items-center rounded-lg border border-slate-200">
               <button
                 type="button"
-                onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
+                onClick={() => changeQuantity(item.quantity - 1)}
                 className="px-3 py-1 text-lg text-slate-700 hover:bg-slate-100"
                 aria-label={`Giảm số lượng ${item.productName}`}
               >
                 −
               </button>
-              <span className="min-w-8 text-center text-sm font-semibold">
-                {item.quantity}
-              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={quantityInput}
+                onChange={(event) => {
+                  setQuantityInput(event.target.value.replace(/\D/g, ''));
+                }}
+                onBlur={commitQuantity}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur();
+                  }
+                }}
+                className="h-8 w-10 border-x border-slate-200 bg-white px-1 py-1 text-center text-sm font-semibold text-slate-900 outline-none focus:bg-amber-50 focus:ring-1 focus:ring-amber-400"
+                aria-label={`Số lượng ${item.productName}`}
+              />
               <button
                 type="button"
-                onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
+                onClick={() => changeQuantity(item.quantity + 1)}
                 className="px-3 py-1 text-lg text-slate-700 hover:bg-slate-100"
                 aria-label={`Tăng số lượng ${item.productName}`}
               >
