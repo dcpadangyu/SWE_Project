@@ -15,41 +15,13 @@
  * - Tự động đổi màu làm nổi bật tab đang xem dựa trên đường dẫn hiện tại (usePathname).
  */
 
-import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useCartStore } from '@/stores/cartStore';
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const [cartCount, setCartCount] = useState<number>(0);
-
-  // Đọc số lượng giỏ hàng để hiển thị badge phụ trên icon giỏ hàng
-  useEffect(() => {
-    const updateCartBadge = () => {
-      try {
-        const stored = localStorage.getItem('brewlite_cart');
-        if (stored) {
-          const items = JSON.parse(stored);
-          const total = Array.isArray(items)
-            ? items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0)
-            : 0;
-          setCartCount(total);
-        } else {
-          setCartCount(0);
-        }
-      } catch {
-        setCartCount(0);
-      }
-    };
-
-    updateCartBadge();
-    window.addEventListener('storage', updateCartBadge);
-    window.addEventListener('cart_updated', updateCartBadge);
-    return () => {
-      window.removeEventListener('storage', updateCartBadge);
-      window.removeEventListener('cart_updated', updateCartBadge);
-    };
-  }, []);
+  const cartCount = useCartStore((state) => state.getTotalQuantity());
 
   // Danh sách các tab điều hướng chuẩn
   const navTabs = [

@@ -1,0 +1,61 @@
+@startuml
+title BrewLite - Sơ đồ triển khai môi trường Production
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+skinparam ArrowColor #475569
+skinparam packageStyle rectangle
+
+actor "Người dùng\n(Trình duyệt / PWA)" as user
+
+cloud "Internet công cộng" as internet
+
+node "Dịch vụ Web/CDN\n(Render / Vercel / tương đương)" as web {
+  component "Giao diện Next.js\n(tài nguyên tĩnh + SSR)" as next
+}
+
+node "Dịch vụ API\n(Render / Railway / Fly.io / VPS)" as api {
+  component "API NestJS\nHTTPS :443 -> HTTP :8080" as nest
+  artifact "Secret / biến môi trường\nPORT, DATABASE_URL,\nJWT_SECRET, khóa thanh toán" as secrets
+}
+
+database "PostgreSQL được quản lý\nlưu trữ bền vững" as db {
+  component "Cơ sở dữ liệu\n(mạng nội bộ)" as postgres
+}
+
+cloud "Cổng thanh toán giả lập\n(hoặc nhà cung cấp bên ngoài)" as payment
+
+user --> internet : HTTPS
+internet --> web : HTTPS
+web --> api : REST qua HTTPS\nCORS allow-list
+api --> db : TLS / mạng nội bộ\n5432
+api --> payment : HTTPS
+api ..> secrets : đọc khi khởi động
+
+note right of web
+Chỉ dành cho Production:
+- CDN/cache tài nguyên công khai
+- không chứa thông tin DB
+- NEXT_PUBLIC_API_URL trỏ đến API
+end note
+
+note right of api
+Kiểm tra sức khỏe: GET /health
+Log: stdout/stderr
+Tự khởi động lại khi lỗi
+end note
+
+note bottom of db
+Sao lưu, migration và thời hạn lưu trữ
+được quản lý riêng với quá trình deploy.
+end note
+
+legend
+  == Phân tách môi trường ==
+  Local: dịch vụ chạy trên máy lập trình viên; chỉ dùng localhost.
+  CI: build, test và lint; không dùng secret Production.
+  Production: HTTPS công khai, đường truyền API/DB nội bộ,
+  secret được quản lý, health check và sao lưu bền vững.
+endlegend
+@enduml
