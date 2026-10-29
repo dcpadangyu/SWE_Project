@@ -10,12 +10,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   onSelect,
 }) => {
-  const isOutOfStock = product.stock === 0;
+  const isOutOfStock = product.stock === 0 || !product.isAvailable;
 
+  const displayPrice = product.priceS || product.priceM || 0;
   const formattedPrice = new Intl.NumberFormat("vi-VN", {
     style: "currency",
     currency: "VND",
-  }).format(product.priceS);
+  }).format(displayPrice);
 
   return (
     <div
@@ -26,6 +27,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     >
       <div className="relative w-full h-36 bg-neutral-100 flex items-center justify-center overflow-hidden">
         {product.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={product.imageUrl}
             alt={product.name}
@@ -35,7 +37,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <span className="text-neutral-400 text-xs">Chưa có ảnh</span>
         )}
         {isOutOfStock && (
-          <span className="absolute top-2 right-2 bg-red-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+          <span className="absolute top-2 right-2 bg-red-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded shadow-sm">
             Hết hàng
           </span>
         )}
@@ -64,7 +66,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               : "bg-amber-800 text-white hover:bg-amber-900 active:scale-95"
           }`}
         >
-          {isOutOfStock ? "Hết hàng" : "Thêm vào giỏ"}
+          {isOutOfStock ? "Hết hàng" : "Chọn món"}
         </button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Product } from "../types/brewlite";
 import { ProductGrid } from "../components/ProductGrid";
 
@@ -72,15 +73,16 @@ const MOCK_PRODUCTS: Product[] = [
 ];
 
 export default function Home() {
+  const router = useRouter();
+
   // Quản lý các trạng thái hiển thị
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Điều hướng sang trang chi tiết món để chọn Size & Topping
   const handleSelectProduct = (product: Product) => {
-    alert(
-      `Đã chọn món: ${product.name} - Giá: ${product.priceS.toLocaleString("vi-VN")} đ`,
-    );
+    router.push(`/products/${product.id}`);
   };
 
   const handleShowAll = () => {
@@ -97,7 +99,7 @@ export default function Home() {
 
   return (
     <div className="space-y-6 pb-24">
-      {/* BANNER CHÀO MỪNG (Giữ nguyên từ bản gốc của Leader) */}
+      {/* BANNER CHÀO MỪNG */}
       <div className="rounded-2xl bg-gradient-to-r from-amber-800 to-amber-950 p-5 text-white shadow-md">
         <span className="inline-block rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-300">
           Ưu đãi hôm nay ✨
@@ -110,7 +112,7 @@ export default function Home() {
         </p>
       </div>
 
-      {/* KHU VỰC THỰC ĐƠN (Ghi đè khối trạng thái cũ) */}
+      {/* KHU VỰC THỰC ĐƠN */}
       <div className="space-y-4">
         <div className="flex items-end justify-between">
           <div>
@@ -123,7 +125,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Nút mô phỏng trạng thái (Hỗ trợ chấm điểm Task 3) */}
+        {/* Nút mô phỏng trạng thái (Hỗ trợ demo & chấm điểm) */}
         <div className="flex gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
           <button
             type="button"
