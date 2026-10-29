@@ -15,7 +15,7 @@ const formatCurrency = (amount: number) =>
 const sampleItems: CartItemType[] = [
   {
     id: 'sample-cappuccino-m',
-    productId: 'sample-cappuccino',
+    productId: '20000000-0000-4000-8000-000000000001',
     productName: 'Cappuccino',
     size: 'M',
     selectedToppings: [],
@@ -25,15 +25,15 @@ const sampleItems: CartItemType[] = [
   },
   {
     id: 'sample-peach-tea-l',
-    productId: 'sample-peach-tea',
+    productId: '20000000-0000-4000-8000-000000000004',
     productName: 'Trà đào',
     size: 'L',
     selectedToppings: [
-      { id: 'sample-pearl', name: 'Trân châu', price: 5000 },
+      { id: 'extra-peach', name: 'Thêm đào', price: 8000 },
     ],
-    unitPrice: 44000,
+    unitPrice: 52000,
     quantity: 2,
-    subtotal: 88000,
+    subtotal: 104000,
   },
 ];
 

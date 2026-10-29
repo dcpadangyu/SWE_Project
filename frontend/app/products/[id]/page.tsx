@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import type {
@@ -13,8 +13,9 @@ import {
   calculateLineSubtotal,
 } from '@/utils/pricing';
 import { useCartStore } from '@/stores/cartStore';
+import { apiClient } from '@/utils/apiClient';
+import { MOCK_PRODUCTS } from '@/utils/mockProducts';
 
-// MOCK DATA: Danh sách sản phẩm mẫu đồng bộ giữa Menu (Task 3) và Chi tiết (Task 4)
 const defaultToppings = [
   {
     id: 'top-001',
@@ -36,12 +37,13 @@ const defaultToppings = [
   },
 ];
 
-const mockProductsList: Product[] = [
+const legacyMockProducts: Product[] = [
+  ...MOCK_PRODUCTS,
   {
     id: 'prod-01',
     name: 'Cà phê sữa',
     description: 'Cà phê pha phin truyền thống kết hợp sữa đặc ngọt thanh.',
-    category: 'Cà phê',
+    category: 'COFFEE',
     priceS: 35000,
     priceM: 40000,
     priceL: 45000,
@@ -55,7 +57,7 @@ const mockProductsList: Product[] = [
     id: 'prod-02',
     name: 'Americano',
     description: 'Espresso pha loãng với nước nóng, giữ nguyên vị đậm đà.',
-    category: 'Cà phê',
+    category: 'COFFEE',
     priceS: 40000,
     priceM: 45000,
     priceL: 50000,
@@ -69,7 +71,7 @@ const mockProductsList: Product[] = [
     id: 'prod-03',
     name: 'Cappuccino',
     description: 'Espresso hòa quyện lớp sữa nóng và bọt sữa bồng bềnh.',
-    category: 'Cà phê',
+    category: 'COFFEE',
     priceS: 45000,
     priceM: 50000,
     priceL: 55000,
@@ -83,7 +85,7 @@ const mockProductsList: Product[] = [
     id: 'prod-04',
     name: 'Trà đào',
     description: 'Trà thanh mát kết hợp đào ngâm giòn ngọt thơm lừng.',
-    category: 'Trà',
+    category: 'TEA',
     priceS: 39000,
     priceM: 44000,
     priceL: 49000,
@@ -100,7 +102,7 @@ const mockProductsList: Product[] = [
     id: 'coffee-001',
     name: 'Cà phê sữa đá',
     description: 'Cà phê đậm đà kết hợp cùng sữa đặc, mang đến hương vị thơm ngon.',
-    category: 'Cà phê',
+    category: 'COFFEE',
     priceS: 25000,
     priceM: 30000,
     priceL: 35000,
@@ -121,19 +123,105 @@ const formatPrice = (price: number) =>
 function ProductDetailContent() {
   const params = useParams<{ id: string }>();
   const addItem = useCartStore((state) => state.addItem);
+  const cartItems = useCartStore((state) => state.items);
+
+  const [product, setProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState<boolean>(false);
+  const [reloadKey, setReloadKey] = useState<number>(0);
 
   const [size, setSize] = useState<Size>('M');
   const [selectedToppings, setSelectedToppings] = useState<SelectedTopping[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState('');
 
-  // Tìm sản phẩm trong danh sách mẫu
-  const product = mockProductsList.find((p) => p.id === params.id) || null;
+  useEffect(() => {
+    let ignore = false;
+    apiClient
+      .get<Product>(`/products/${params.id}`)
+      .then((data) => {
+        if (ignore) return;
+        setProduct(data);
+        setError(null);
+        setNotFound(false);
+      })
+      .catch((err: unknown) => {
+        if (ignore) return;
+        const fallback = legacyMockProducts.find((p) => p.id === params.id);
+        if (fallback) {
+          setProduct(fallback);
+          setError(null);
+          setNotFound(false);
+        } else {
+          const errMsg = err instanceof Error ? err.message : '';
+          if (errMsg.includes('404') || errMsg.toLowerCase().includes('not found')) {
+            setNotFound(true);
+          } else {
+            setError('Không thể tải thông tin sản phẩm. Vui lòng thử lại.');
+          }
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      });
 
-  if (!product) {
+    return () => {
+      ignore = true;
+    };
+  }, [params.id, reloadKey]);
+
+  const handleRetry = () => {
+    setIsLoading(true);
+    setError(null);
+    setNotFound(false);
+    setReloadKey((k) => k + 1);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4 py-6 animate-pulse" aria-busy="true">
+        <div className="h-48 w-full rounded-2xl bg-neutral-200" />
+        <div className="h-6 w-1/2 rounded bg-neutral-200" />
+        <div className="h-4 w-3/4 rounded bg-neutral-200" />
+        <div className="grid grid-cols-3 gap-2 pt-4">
+          <div className="h-16 rounded-xl bg-neutral-200" />
+          <div className="h-16 rounded-xl bg-neutral-200" />
+          <div className="h-16 rounded-xl bg-neutral-200" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
     return (
       <div className="space-y-4 py-10 text-center">
-        <h2 className="text-lg font-bold">Không tìm thấy sản phẩm</h2>
+        <p className="text-sm font-medium text-red-600">{error}</p>
+        <div className="flex justify-center gap-3">
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="rounded-xl bg-amber-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-amber-800"
+          >
+            Thử lại
+          </button>
+          <Link
+            href="/"
+            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
+          >
+            Về trang chủ
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (notFound || !product) {
+    return (
+      <div className="space-y-4 py-10 text-center">
+        <h2 className="text-lg font-bold text-slate-900">Không tìm thấy sản phẩm</h2>
         <Link
           href="/"
           className="inline-block rounded-xl bg-amber-900 px-5 py-3 text-white"
@@ -145,6 +233,13 @@ function ProductDetailContent() {
   }
 
   const available = product.isAvailable && product.stock > 0;
+
+  // Tổng số lượng của cùng productId hiện có trong giỏ hàng (AC-06.11)
+  const currentInCartQty = cartItems
+    .filter((item) => item.productId === product.id)
+    .reduce((sum, item) => sum + item.quantity, 0);
+
+  const remainingStock = Math.max(0, product.stock - currentInCartQty);
 
   const unitPrice = calculateItemPrice(product, size, selectedToppings);
   const subtotal = calculateLineSubtotal(unitPrice, quantity);
@@ -181,8 +276,10 @@ function ProductDetailContent() {
       return;
     }
 
-    if (quantity < 1 || quantity > product.stock) {
-      setMessage('Số lượng không hợp lệ.');
+    if (quantity < 1 || currentInCartQty + quantity > product.stock) {
+      setMessage(
+        `Số lượng vượt quá tồn kho khả dụng (còn tối đa ${remainingStock} ly có thể thêm).`,
+      );
       return;
     }
 
@@ -244,8 +341,12 @@ function ProductDetailContent() {
             {product.description}
           </p>
 
-          <p className="pt-1 text-sm font-medium text-emerald-700">
-            {available ? '● Đang mở bán' : '● Hết hàng'}
+          <p
+            className={`pt-1 text-sm font-medium ${
+              available ? 'text-emerald-700' : 'text-red-600'
+            }`}
+          >
+            {available ? `● Đang mở bán (Còn ${product.stock} ly)` : '● Hết hàng'}
           </p>
         </div>
       </section>
@@ -279,7 +380,7 @@ function ProductDetailContent() {
                   : 'border-slate-200 bg-white'
               }`}
             >
-              <span className="block text-lg font-black">{option.size}</span>
+              <span className="block text-lg font-black text-slate-900">{option.size}</span>
               <span className="mt-1 block text-xs text-slate-600">
                 {formatPrice(option.price)}
               </span>
@@ -295,12 +396,12 @@ function ProductDetailContent() {
           <p className="text-xs text-slate-500">Có thể chọn nhiều topping</p>
         </div>
 
-        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
           {product.toppingOptions
             .filter((topping) => topping.isAvailable)
             .map((topping) => {
               const checked = selectedToppings.some(
-                (item) => item.id === topping.id
+                (item) => item.id === topping.id,
               );
 
               return (
@@ -315,7 +416,7 @@ function ProductDetailContent() {
                     className="h-4 w-4 accent-amber-900"
                   />
 
-                  <span className="flex-1 text-sm font-medium">
+                  <span className="flex-1 text-sm font-medium text-slate-800">
                     {topping.name}
                   </span>
 
@@ -341,13 +442,13 @@ function ProductDetailContent() {
               setMessage('');
             }}
             aria-label="Giảm số lượng"
-            className="h-10 w-10 rounded-xl border border-slate-200 text-lg disabled:opacity-40"
+            className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-lg text-slate-900 disabled:opacity-40"
           >
             −
           </button>
 
           <span
-            className="min-w-8 text-center text-lg font-bold"
+            className="min-w-8 text-center text-lg font-bold text-slate-900"
             aria-live="polite"
           >
             {quantity}
@@ -355,13 +456,15 @@ function ProductDetailContent() {
 
           <button
             type="button"
-            disabled={quantity >= product.stock}
+            disabled={!available || quantity >= Math.max(1, remainingStock)}
             onClick={() => {
-              setQuantity((current) => Math.min(product.stock, current + 1));
+              setQuantity((current) =>
+                Math.min(Math.max(1, remainingStock), current + 1),
+              );
               setMessage('');
             }}
             aria-label="Tăng số lượng"
-            className="h-10 w-10 rounded-xl border border-slate-200 text-lg disabled:opacity-40"
+            className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-lg text-slate-900 disabled:opacity-40"
           >
             +
           </button>
@@ -408,10 +511,6 @@ function ProductDetailContent() {
           ? `Thêm vào giỏ · ${formatPrice(subtotal)}`
           : 'Sản phẩm hiện không khả dụng'}
       </button>
-
-      <p className="text-center text-xs text-slate-400">
-        Giá trên là dữ liệu mock phục vụ kiểm thử giao diện.
-      </p>
     </div>
   );
 }

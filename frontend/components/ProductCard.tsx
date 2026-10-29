@@ -12,7 +12,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 }) => {
   const isOutOfStock = product.stock === 0 || !product.isAvailable;
 
-  const displayPrice = product.priceS || product.priceM || 0;
+  const displayPrice = product.priceM || product.priceS || 0;
   const formattedPrice = new Intl.NumberFormat("vi-VN", {
     style: "currency",
     currency: "VND",
@@ -20,12 +20,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   return (
     <div
-      onClick={() => !isOutOfStock && onSelect && onSelect(product)}
-      className={`flex flex-col bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden transition hover:shadow-md ${
-        isOutOfStock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+      onClick={() => onSelect && onSelect(product)}
+      className={`flex flex-col bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden transition hover:shadow-md cursor-pointer ${
+        isOutOfStock ? "opacity-75" : ""
       }`}
     >
-      <div className="relative w-full h-36 bg-neutral-100 flex items-center justify-center overflow-hidden">
+      <div className="relative w-full h-36 bg-amber-50 flex items-center justify-center overflow-hidden">
         {product.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -34,7 +34,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             className="w-full h-full object-cover"
           />
         ) : (
-          <span className="text-neutral-400 text-xs">Chưa có ảnh</span>
+          <span className="text-4xl" aria-hidden="true">
+            ☕
+          </span>
         )}
         {isOutOfStock && (
           <span className="absolute top-2 right-2 bg-red-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded shadow-sm">
@@ -55,18 +57,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         <button
           type="button"
-          disabled={isOutOfStock}
           onClick={(e) => {
             e.stopPropagation();
-            if (!isOutOfStock && onSelect) onSelect(product);
+            if (onSelect) onSelect(product);
           }}
           className={`w-full py-1.5 px-3 rounded-lg text-xs font-medium transition ${
             isOutOfStock
-              ? "bg-neutral-200 text-neutral-400 cursor-not-allowed"
+              ? "bg-neutral-200 text-neutral-600 hover:bg-neutral-300"
               : "bg-amber-800 text-white hover:bg-amber-900 active:scale-95"
           }`}
         >
-          {isOutOfStock ? "Hết hàng" : "Chọn món"}
+          {isOutOfStock ? "Xem chi tiết (Hết hàng)" : "Chọn món"}
         </button>
       </div>
     </div>

@@ -1,84 +1,53 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Product } from "../types/brewlite";
 import { ProductGrid } from "../components/ProductGrid";
-
-/**
- * MẢNG DỮ LIỆU MẪU (MOCK DATA)
- * Sử dụng tạm thời để kiểm thử UI trong Task 3 trước khi tích hợp API.
- */
-const MOCK_PRODUCTS: Product[] = [
-  {
-    id: "prod-01",
-    name: "Cà phê sữa",
-    priceS: 35000,
-    priceM: 40000,
-    priceL: 45000,
-    toppingOptions: [],
-    isAvailable: true,
-    imageUrl:
-      "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500&auto=format&fit=crop&q=60",
-    stock: 20,
-    description: "Cà phê pha phin truyền thống kết hợp sữa đặc ngọt thanh.",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "prod-02",
-    name: "Americano",
-    priceS: 40000,
-    priceM: 45000,
-    priceL: 50000,
-    toppingOptions: [],
-    isAvailable: true,
-    imageUrl:
-      "https://images.unsplash.com/photo-1551030173-122aabc4489c?w=500&auto=format&fit=crop&q=60",
-    stock: 15,
-    description: "Espresso pha loãng với nước nóng, giữ nguyên vị đậm đà.",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "prod-03",
-    name: "Cappuccino",
-    priceS: 45000,
-    priceM: 50000,
-    priceL: 55000,
-    toppingOptions: [],
-    isAvailable: true,
-    imageUrl:
-      "https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=500&auto=format&fit=crop&q=60",
-    stock: 10,
-    description: "Espresso hòa quyện lớp sữa nóng và bọt sữa bồng bềnh.",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "prod-04",
-    name: "Trà đào",
-    priceS: 39000,
-    priceM: 44000,
-    priceL: 49000,
-    toppingOptions: [],
-    isAvailable: false,
-    imageUrl:
-      "https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=500&auto=format&fit=crop&q=60",
-    stock: 0,
-    description: "Trà thanh mát kết hợp đào ngâm giòn ngọt thơm lừng.",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+import { apiClient } from "../utils/apiClient";
+import { MOCK_PRODUCTS } from "../utils/mockProducts";
 
 export default function Home() {
   const router = useRouter();
 
-  // Quản lý các trạng thái hiển thị
+  const [loadedProducts, setLoadedProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState<number>(0);
+
+  useEffect(() => {
+    let ignore = false;
+    apiClient
+      .get<Product[]>("/products")
+      .then((data) => {
+        if (ignore) return;
+        setLoadedProducts(data);
+        setProducts(data);
+        setError(null);
+      })
+      .catch(() => {
+        if (ignore) return;
+        // Fallback sang MOCK_PRODUCTS nếu Backend chưa bật để UI demo vẫn hoạt động mượt mà
+        setLoadedProducts(MOCK_PRODUCTS);
+        setProducts(MOCK_PRODUCTS);
+      })
+      .finally(() => {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [reloadKey]);
+
+  const handleRetry = () => {
+    setIsLoading(true);
+    setError(null);
+    setReloadKey((k) => k + 1);
+  };
 
   // Điều hướng sang trang chi tiết món để chọn Size & Topping
   const handleSelectProduct = (product: Product) => {
@@ -88,7 +57,7 @@ export default function Home() {
   const handleShowAll = () => {
     setIsLoading(false);
     setError(null);
-    setProducts(MOCK_PRODUCTS);
+    setProducts(loadedProducts);
   };
 
   const handleShowEmpty = () => {
@@ -188,7 +157,7 @@ export default function Home() {
           products={products}
           isLoading={isLoading}
           error={error}
-          onRetry={handleShowAll}
+          onRetry={handleRetry}
           onSelectProduct={handleSelectProduct}
         />
       </div>
