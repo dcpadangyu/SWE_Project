@@ -113,7 +113,7 @@ Tạo đơn hàng trạng thái `PENDING` từ giỏ hàng (SRS FR-12). Chưa th
 docker compose up -d db          # ở thư mục gốc repo
 cd backend
 npm install
-npx prisma migrate deploy        # tạo bảng (gồm orders, order_items)
+npx prisma migrate deploy        # tạo bảng (gồm orders, order_items, users)
 npm run prisma:seed              # nạp menu mẫu
 npm run start:dev                # http://localhost:8080
 ```
@@ -125,6 +125,7 @@ Lấy `productId` từ `GET /products` (id mẫu: `20000000-0000-4000-8000-00000
 
 ```http
 POST /orders
+Authorization: Bearer <JWT_TOKEN>
 Content-Type: application/json
 Idempotency-Key: 3f2b8c1e-5a7d-4e2f-9b61-0c1d2e3f4a5b
 
@@ -139,6 +140,7 @@ Idempotency-Key: 3f2b8c1e-5a7d-4e2f-9b61-0c1d2e3f4a5b
 
 | Trường | Quy tắc |
 | :--- | :--- |
+| Header `Authorization` | `Bearer <JWT_TOKEN>` (nhận từ `POST /auth/login` hoặc `POST /auth/register`). |
 | `items` | Mảng, 1 đến 50 dòng. |
 | `items[].productId` | UUID của sản phẩm. |
 | `items[].size` | `S`, `M` hoặc `L`. |
@@ -175,14 +177,13 @@ Gửi thêm trường lạ như `total` hoặc `unitPrice` sẽ bị `400`.
 | HTTP | Khi nào |
 | :--- | :--- |
 | `400` | Dữ liệu sai (giỏ rỗng, `quantity` không hợp lệ, size sai, trường lạ), sản phẩm không tồn tại hoặc ngừng bán, topping không hợp lệ. |
+| `401` | Chưa đăng nhập hoặc JWT token không hợp lệ / hết hạn (`JwtAuthGuard`). |
 | `409` | Hết hàng (`code: OUT_OF_STOCK`, `details.outOfStock[]` liệt kê món thiếu). Tồn kho được cộng dồn theo sản phẩm giữa các dòng. Toàn bộ đơn bị hủy, không lưu đơn nào. |
 | `409` | `Idempotency-Key` đã thuộc người dùng khác. |
 
 ### Lưu ý
 
-- **Người dùng tạm thời:** Task 7 (JWT) chưa merge nên chưa có Guard. Controller đọc header
-  `x-user-id` (UUID, mặc định một user giả). Đây chỉ dùng để phát triển và không an toàn cho production.
-  Khi có JWT, thay `CurrentUserId` trong `src/orders/current-user.decorator.ts` bằng user lấy từ token.
+- **Xác thực người dùng:** Đã tích hợp `JwtAuthGuard` và `@CurrentUser()` từ Task 7. Controller tự động lấy `user.id` từ JWT token trong header `Authorization: Bearer <token>`.
 - **Voucher và `paymentMethod`** chưa nằm trong request (thuộc Task 8 và Task 10).
 - Kiểm tra: `npm test` (unit test cho tính tiền, tồn kho, idempotency, validate DTO).
 

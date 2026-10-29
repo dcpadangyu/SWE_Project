@@ -34,6 +34,8 @@ const drinks = [
   {
     name: 'Cà phê sữa',
     description: 'Cà phê đậm vị kết hợp sữa đặc.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[0].id,
     prices: [30000, 35000, 40000],
     stock: 30,
@@ -43,6 +45,8 @@ const drinks = [
   {
     name: 'Americano',
     description: 'Espresso pha loãng với nước.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1551030173-122aabc4489c?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[0].id,
     prices: [35000, 40000, 45000],
     stock: 25,
@@ -52,6 +56,8 @@ const drinks = [
   {
     name: 'Cappuccino',
     description: 'Espresso kết hợp sữa tươi và bọt sữa.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[0].id,
     prices: [40000, 45000, 50000],
     stock: 0,
@@ -61,6 +67,8 @@ const drinks = [
   {
     name: 'Trà đào',
     description: 'Trà kết hợp đào ngâm và đào miếng.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[1].id,
     prices: [34000, 39000, 44000],
     stock: 35,
@@ -78,6 +86,8 @@ const drinks = [
   {
     name: 'Bạc xỉu',
     description: 'Sữa đặc kết hợp cà phê, vị nhẹ.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[0].id,
     prices: [30000, 35000, 40000],
     stock: 20,
@@ -87,6 +97,8 @@ const drinks = [
   {
     name: 'Latte',
     description: 'Espresso hòa cùng sữa tươi.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1570968915860-54d5c301fa9f?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[0].id,
     prices: [40000, 45000, 50000],
     stock: 18,
@@ -96,6 +108,8 @@ const drinks = [
   {
     name: 'Mocha',
     description: 'Cà phê kết hợp chocolate và sữa tươi.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1578314675249-a6910f80cc4e?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[0].id,
     prices: [45000, 50000, 55000],
     stock: 15,
@@ -105,6 +119,8 @@ const drinks = [
   {
     name: 'Trà vải',
     description: 'Trà kết hợp vải ngâm thơm ngọt.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[1].id,
     prices: [34000, 39000, 44000],
     stock: 25,
@@ -122,6 +138,8 @@ const drinks = [
   {
     name: 'Trà chanh',
     description: 'Trà kết hợp chanh, vị chua ngọt nhẹ.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[1].id,
     prices: [25000, 30000, 35000],
     stock: 40,
@@ -131,6 +149,8 @@ const drinks = [
   {
     name: 'Trà sen',
     description: 'Trà ướp hương sen, vị thanh dịu.',
+    imageUrl:
+      'https://images.unsplash.com/photo-1597481499750-3e6b22637e12?w=500&auto=format&fit=crop&q=60',
     categoryId: categories[1].id,
     prices: [35000, 40000, 45000],
     stock: 12,
@@ -155,7 +175,7 @@ async function main() {
       const data = {
         name: drink.name,
         description: drink.description,
-        imageUrl: null,
+        imageUrl: drink.imageUrl,
         categoryId: drink.categoryId,
         priceS: drink.prices[0],
         priceM: drink.prices[1],

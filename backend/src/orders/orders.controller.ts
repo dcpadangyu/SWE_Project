@@ -5,33 +5,53 @@ import {
   Headers,
   Post,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
-import { CurrentUserId } from './current-user.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrdersService } from './orders.service';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role?: string;
+}
+
+@ApiTags('Orders')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   /**
-   * POST /orders - Tạo đơn hàng PENDING từ giỏ hàng (FR-12).
+   * POST /orders - Tạo đơn hàng PENDING từ giỏ hàng (FR-12, AC-02.3, AC-02.4).
    *
+   * Yêu cầu xác thực Bearer JWT hợp lệ. Danh tính userId được trích xuất trực tiếp từ JWT token.
    * Header `Idempotency-Key` (khuyến nghị): gửi lại cùng khóa thì trả lại đơn cũ (200),
-   * không tạo đơn mới. Nếu thiếu, server tự sinh khóa (không có bảo vệ gửi lặp).
+   * không tạo đơn mới. Nếu thiếu, server tự sinh khóa.
    */
   @Post()
+  @ApiOperation({ summary: 'Tạo đơn hàng mới ở trạng thái PENDING (yêu cầu JWT)' })
+  @ApiUnauthorizedResponse({ description: 'Chưa đăng nhập hoặc JWT token không hợp lệ.' })
   async create(
-    @CurrentUserId() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: CreateOrderDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     const key = this.resolveKey(idempotencyKey);
     const { order, replayed } = await this.ordersService.create(
-      userId,
+      user.id,
       key,
       dto,
     );
