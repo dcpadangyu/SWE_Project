@@ -37,8 +37,12 @@ function RegisterForm() {
       setTimeout(() => {
         router.push(loginHref);
       }, 1200);
-    } catch (err: any) {
-      setError(err?.message || 'Dữ liệu đăng ký không hợp lệ hoặc email đã tồn tại');
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Dữ liệu đăng ký không hợp lệ hoặc email đã tồn tại',
+      );
     } finally {
       setLoading(false);
     }

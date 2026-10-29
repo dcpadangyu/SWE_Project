@@ -12,17 +12,19 @@
  * - Tự động cập nhật số lượng khi giỏ hàng có sự thay đổi thông qua Zustand store.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useCartStore } from '@/stores/cartStore';
 
-export default function Header() {
-  const [mounted, setMounted] = useState(false);
-  const cartCount = useCartStore((state) => state.getTotalQuantity());
+const emptySubscribe = () => () => {};
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+export default function Header() {
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+  const cartCount = useCartStore((state) => state.getTotalQuantity());
 
   const displayCount = mounted ? cartCount : 0;
 

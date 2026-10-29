@@ -54,10 +54,10 @@ model Product {
   @@map("products")
 }
 
-// 3. Phân quyền người dùng (Role) - Task 7
+// 3. Phân quyền người dùng (Role) - Tuân thủ class-domain.md & brewlite.ts (Task 7)
 enum Role {
   CUSTOMER
-  STAFF
+  BARISTA
   ADMIN
 }
 

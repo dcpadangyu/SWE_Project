@@ -3,7 +3,7 @@ const TOKEN_KEY = 'brewlite_token';
 const USER_KEY = 'brewlite_user';
 
 export const authStorage = {
-  setSession(token: string, user: any) {
+  setSession(token: string, user: unknown) {
     if (typeof window === 'undefined') return;
     // Lưu đúng khóa 'brewlite_token' để apiClient.ts đọc được
     localStorage.setItem(TOKEN_KEY, token);

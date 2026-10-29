@@ -45,6 +45,7 @@ export default function CartItem({
       <div className="flex gap-3">
         <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-2xl">
           {item.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={item.imageUrl}
               alt={item.productName}

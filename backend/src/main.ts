@@ -29,10 +29,18 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   // 1. Cấu hình CORS (Cross-Origin Resource Sharing):
-  // Cho phép ứng dụng Frontend Next.js (chạy ở localhost:3000 hoặc domain production)
-  // có thể gửi request gọi API tới Backend (localhost:8080) mà không bị trình duyệt chặn.
+  // Hỗ trợ đồng thời cả biến CORS_ORIGIN và FRONTEND_URL (trong .env.example / docker-compose.yml)
+  const rawOrigin =
+    process.env.CORS_ORIGIN ||
+    process.env.FRONTEND_URL ||
+    'http://localhost:3000';
+  const allowedOrigins = rawOrigin
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

@@ -16,19 +16,21 @@
  * - Cập nhật số lượng giỏ hàng qua Zustand store.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCartStore } from '@/stores/cartStore';
 
+const emptySubscribe = () => () => {};
+
 export default function BottomNav() {
   const pathname = usePathname();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
   const cartCount = useCartStore((state) => state.getTotalQuantity());
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const displayCount = mounted ? cartCount : 0;
 

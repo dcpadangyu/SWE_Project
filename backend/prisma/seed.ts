@@ -18,7 +18,7 @@ const extraCoffee = [
   {
     id: 'extra-coffee',
     name: 'Thêm cà phê',
-    price: '10000.00',
+    price: 10000,
     isAvailable: true,
   },
 ];
@@ -26,7 +26,7 @@ const extraCoffee = [
 const jelly = {
   id: 'jelly',
   name: 'Thạch',
-  price: '5000.00',
+  price: 5000,
   isAvailable: true,
 };
 
@@ -69,7 +69,7 @@ const drinks = [
       {
         id: 'extra-peach',
         name: 'Thêm đào',
-        price: '8000.00',
+        price: 8000,
         isAvailable: true,
       },
       jelly,
@@ -113,7 +113,7 @@ const drinks = [
       {
         id: 'extra-lychee',
         name: 'Thêm vải',
-        price: '8000.00',
+        price: 8000,
         isAvailable: true,
       },
       jelly,

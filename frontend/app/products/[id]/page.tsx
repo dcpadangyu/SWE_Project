@@ -7,7 +7,6 @@ import type {
   Product,
   Size,
   SelectedTopping,
-  CartItem,
 } from '@/types/brewlite';
 import {
   calculateItemPrice,

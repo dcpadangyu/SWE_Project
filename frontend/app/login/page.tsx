@@ -41,8 +41,10 @@ function LoginForm() {
 
       authStorage.setSession(response.accessToken, response.user);
       router.push(redirectUrl);
-    } catch (err: any) {
-      setError(err?.message || 'Email hoặc mật khẩu không đúng');
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : 'Email hoặc mật khẩu không đúng',
+      );
     } finally {
       setLoading(false);
     }

@@ -8,7 +8,7 @@
 
 Quy trình đặt và xử lý cà phê trực tuyến đòi hỏi vòng đời đơn hàng phải diễn ra theo một chu trình nghiêm ngặt, nhất quán giữa Frontend (Next.js), Backend (NestJS), Cổng thanh toán (Mock Payment) và Nghiệp vụ pha chế tại quầy (Barista).
 
-Hệ thống cần tránh tuyệt đối các tình trạng dữ liệu không hợp lệ, ví dụ: đơn chưa thanh toán đã chuyển sang pha chế, đơn đã hoàn tất bị thanh toán lại, hoặc đơn bị hủy mà không hoàn trả tồn kho.
+Hệ thống cần tránh tuyệt đối các tình trạng dữ liệu không hợp lệ, ví dụ: đơn chưa thanh toán đã chuyển sang pha chế, đơn đã hoàn tất bị thanh toán lại, hoặc trừ tồn kho sai thời điểm.
 
 ## 2. Quyết định
 
@@ -34,9 +34,9 @@ stateDiagram-v2
 
 ## 4. Định nghĩa và ý nghĩa các trạng thái
 
-- **PENDING:** Đơn hàng vừa được khởi tạo từ giỏ hàng, đã giữ chỗ tồn kho và đang chờ thanh toán.
-- **PAID:** Đã nhận phản hồi thanh toán thành công từ Mock Payment Gateway; điểm thưởng Loyalty được cộng cho khách.
-- **PAYMENT_FAILED:** Giao dịch thanh toán bị từ chối; hệ thống giữ nguyên giỏ hàng để khách có thể thử lại.
+- **PENDING:** Đơn hàng vừa được khởi tạo từ giỏ hàng sau khi kiểm tra còn tồn kho và đang chờ thanh toán (chưa trừ tồn kho).
+- **PAID:** Đã nhận phản hồi thanh toán thành công từ Mock Payment Gateway; hệ thống trừ tồn kho an toàn (Optimistic Locking) và cộng điểm thưởng Loyalty cho khách.
+- **PAYMENT_FAILED:** Giao dịch thanh toán bị từ chối; hệ thống không trừ tồn kho, giữ nguyên giỏ hàng để khách có thể thử lại.
 - **PREPARING:** Nhân viên Barista tại quầy xác nhận tiếp nhận đơn và bắt đầu pha chế.
 - **READY:** Đồ uống đã hoàn thành, hệ thống gửi thông báo mời khách tới quầy nhận nước.
 - **COMPLETED:** Đơn hàng đã bàn giao thành công cho khách hàng (Trạng thái kết thúc thành công).
@@ -46,7 +46,7 @@ stateDiagram-v2
 
 1. **Kiểm soát từ Backend:** Toàn bộ logic chuyển trạng thái phải do hàm nghiệp vụ của Backend (ví dụ `assertTransition(currentStatus, targetStatus)`) kiểm tra và thực thi. Tuyệt đối không cho phép Frontend gửi trực tiếp trường `status` lên để ghi đè.
 2. **Cơ chế Idempotency:** Mọi yêu cầu thanh toán đều phải kèm `Idempotency-Key` để tránh trường hợp mạng chập chờn gửi lặp làm chuyển trạng thái hoặc trừ tiền nhiều lần.
-3. **Bảo toàn giỏ hàng khi lỗi:** Khi đơn chuyển sang `PAYMENT_FAILED`, hệ thống không trừ điểm tích lũy, không hủy giỏ hàng trên giao diện và cho phép khách thử lại tối đa 3 lần.
+3. **Bảo toàn giỏ hàng khi lỗi:** Khi đơn chuyển sang `PAYMENT_FAILED`, hệ thống không trừ tồn kho, không cộng điểm tích lũy, không hủy giỏ hàng trên giao diện và cho phép khách thử lại tối đa 3 lần.
 4. **Trạng thái bất biến (Immutable End-States):** Các đơn hàng đã ở trạng thái `COMPLETED` hoặc `CANCELLED` là trạng thái kết thúc, tuyệt đối không được phép chuyển sang bất kỳ trạng thái nào khác.
 
 ## 6. Hệ quả

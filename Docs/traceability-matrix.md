@@ -54,6 +54,6 @@
 
 ## Rà soát tính nhất quán (Consistency check)
 
-1. Tính nhất quán về thực thể dữ liệu: Các thực thể trong `Class-01` (`class-domain.puml`) bao phủ đầy đủ các thực thể được đặc tả trong SRS: `User`, `Product`, `Order`, `OrderItem`, `Payment`, `Promotion`, `LoyaltyTransaction`.
-2. Tính nhất quán về trạng thái đơn hàng: Máy trạng thái (Order State Machine) trong SRS, `use-case-checkout.md` và `Sequence-01` (`sequence-checkout.puml`) đều thống nhất sử dụng 7 trạng thái chuẩn: `PENDING`, `PAID`, `PREPARING`, `READY`, `COMPLETED`, `PAYMENT_FAILED`, `CANCELLED`.
-3. Tính nhất quán về tham số nghiệp vụ: Header `Idempotency-Key` chống thanh toán trùng và cơ chế kiểm soát tồn kho (optimistic locking) trong SRS được phản ánh trực tiếp trong luồng xử lý của sơ đồ tuần tự `Sequence-01`.
+1. Tính nhất quán về thực thể dữ liệu: Các thực thể trong `Class-01` (`class-domain.puml` & `class-domain.md`) bao phủ đầy đủ các thực thể được đặc tả trong SRS: `User`, `Product`, `Order`, `OrderDetail` (ánh xạ sang model `OrderItem` / bảng `order_items` trong Prisma), `Payment`, `Voucher` (tương ứng khái niệm `Promotion` trong đề bài) và `LoyaltyTransaction`.
+2. Tính nhất quán về trạng thái đơn hàng: Máy trạng thái (Order State Machine) trong SRS, `ADR-003`, `use-case-checkout.md`, `Activity-01` và `Sequence-01` (`sequence-checkout.puml`) đều thống nhất sử dụng 7 trạng thái chuẩn: `PENDING`, `PAID`, `PREPARING`, `READY`, `COMPLETED`, `PAYMENT_FAILED`, `CANCELLED`.
+3. Tính nhất quán về tham số nghiệp vụ: Header `Idempotency-Key` chống thanh toán trùng và cơ chế kiểm soát tồn kho đồng thời (optimistic locking trừ kho khi đơn chuyển sang `PAID`) trong SRS được phản ánh thống nhất trong luồng xử lý của `Sequence-01`, `Activity-01` và `ADR-003`.
