@@ -12,11 +12,44 @@
  * - Tự động cập nhật số lượng khi giỏ hàng có sự thay đổi.
  */
 
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useCartStore } from '@/stores/cartStore';
 
 export default function Header() {
-  const cartCount = useCartStore((state) => state.getTotalQuantity());
+  const [cartCount, setCartCount] = useState<number>(0);
+
+  // Đọc số lượng món trong giỏ từ localStorage và lắng nghe sự kiện cập nhật
+  useEffect(() => {
+    const updateCountFromStorage = () => {
+      try {
+        const storedCart = localStorage.getItem('brewlite_cart');
+        if (storedCart) {
+          const items = JSON.parse(storedCart);
+          // Tổng số lượng đơn vị sản phẩm (FR-11)
+          const totalQty = Array.isArray(items)
+            ? items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)
+            : 0;
+          setCartCount(totalQty);
+        } else {
+          setCartCount(0);
+        }
+      } catch (e) {
+        setCartCount(0);
+      }
+    };
+
+    // Đọc lần đầu khi tải trang
+    updateCountFromStorage();
+
+    // Lắng nghe sự kiện tùy biến 'cart_updated' từ các component khác phát ra
+    window.addEventListener('storage', updateCountFromStorage);
+    window.addEventListener('cart_updated', updateCountFromStorage);
+
+    return () => {
+      window.removeEventListener('storage', updateCountFromStorage);
+      window.removeEventListener('cart_updated', updateCountFromStorage);
+    };
+  }, []);
 
   return (
     <header className="sticky top-0 z-40 bg-amber-900 text-white shadow-md">
