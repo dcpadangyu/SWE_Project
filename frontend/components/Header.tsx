@@ -9,47 +9,22 @@
  * - Cố định ở đầu màn hình (Sticky Header) với phong cách Mobile-first.
  * - Hiển thị Logo thương hiệu BrewLite kèm biểu tượng tách cà phê.
  * - Hiển thị nút Giỏ hàng kèm Cart Badge báo số lượng sản phẩm (FR-11).
- * - Tự động cập nhật số lượng khi giỏ hàng có sự thay đổi.
+ * - Tự động cập nhật số lượng khi giỏ hàng có sự thay đổi thông qua Zustand store.
  */
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useCartStore } from '@/stores/cartStore';
 
 export default function Header() {
-  const [cartCount, setCartCount] = useState<number>(0);
+  const [mounted, setMounted] = useState(false);
+  const cartCount = useCartStore((state) => state.getTotalQuantity());
 
-  // Đọc số lượng món trong giỏ từ localStorage và lắng nghe sự kiện cập nhật
   useEffect(() => {
-    const updateCountFromStorage = () => {
-      try {
-        const storedCart = localStorage.getItem('brewlite_cart');
-        if (storedCart) {
-          const items = JSON.parse(storedCart);
-          // Tổng số lượng đơn vị sản phẩm (FR-11)
-          const totalQty = Array.isArray(items)
-            ? items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)
-            : 0;
-          setCartCount(totalQty);
-        } else {
-          setCartCount(0);
-        }
-      } catch (e) {
-        setCartCount(0);
-      }
-    };
-
-    // Đọc lần đầu khi tải trang
-    updateCountFromStorage();
-
-    // Lắng nghe sự kiện tùy biến 'cart_updated' từ các component khác phát ra
-    window.addEventListener('storage', updateCountFromStorage);
-    window.addEventListener('cart_updated', updateCountFromStorage);
-
-    return () => {
-      window.removeEventListener('storage', updateCountFromStorage);
-      window.removeEventListener('cart_updated', updateCountFromStorage);
-    };
+    setMounted(true);
   }, []);
+
+  const displayCount = mounted ? cartCount : 0;
 
   return (
     <header className="sticky top-0 z-40 bg-amber-900 text-white shadow-md">
@@ -111,9 +86,9 @@ export default function Header() {
           </svg>
 
           {/* BADGE SỐ LƯỢNG MÓN (CHỈ HIỂN THỊ KHI CÓ ÍT NHẤT 1 MÓN - AC-11.1) */}
-          {cartCount > 0 && (
+          {displayCount > 0 && (
             <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white shadow-sm animate-pulse">
-              {cartCount > 99 ? '99+' : cartCount}
+              {displayCount > 99 ? '99+' : displayCount}
             </span>
           )}
         </Link>

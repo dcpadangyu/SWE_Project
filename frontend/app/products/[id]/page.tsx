@@ -13,6 +13,7 @@ import {
   calculateItemPrice,
   calculateLineSubtotal,
 } from '@/utils/pricing';
+import { useCartStore } from '@/stores/cartStore';
 
 // MOCK DATA: Danh sách sản phẩm mẫu đồng bộ giữa Menu (Task 3) và Chi tiết (Task 4)
 const defaultToppings = [
@@ -115,10 +116,12 @@ const formatPrice = (price: number) =>
   new Intl.NumberFormat('vi-VN', {
     style: 'currency',
     currency: 'VND',
+    maximumFractionDigits: 0,
   }).format(price);
 
 function ProductDetailContent() {
   const params = useParams<{ id: string }>();
+  const addItem = useCartStore((state) => state.addItem);
 
   const [size, setSize] = useState<Size>('M');
   const [selectedToppings, setSelectedToppings] = useState<SelectedTopping[]>([]);
@@ -185,70 +188,17 @@ function ProductDetailContent() {
     }
 
     try {
-      const stored = localStorage.getItem('brewlite_cart');
-      const cart: CartItem[] = stored ? JSON.parse(stored) : [];
-
-      if (!Array.isArray(cart)) {
-        setMessage('Dữ liệu giỏ hàng không hợp lệ.');
-        return;
-      }
-
-      // Sắp xếp ID topping để so sánh cấu hình
-      const toppingKey = selectedToppings
-        .map((item) => item.id)
-        .sort()
-        .join(',');
-
-      const existingIndex = cart.findIndex((item) => {
-        const existingToppingKey = item.selectedToppings
-          .map((topping) => topping.id)
-          .sort()
-          .join(',');
-
-        return (
-          item.productId === product.id &&
-          item.size === size &&
-          existingToppingKey === toppingKey
-        );
+      addItem({
+        id: crypto.randomUUID(),
+        productId: product.id,
+        productName: product.name,
+        imageUrl: product.imageUrl,
+        size,
+        selectedToppings: [...selectedToppings],
+        unitPrice,
+        quantity,
+        subtotal,
       });
-
-      const updatedCart = [...cart];
-
-      if (existingIndex >= 0) {
-        const existing = updatedCart[existingIndex];
-        const newQuantity = existing.quantity + quantity;
-
-        if (newQuantity > product.stock) {
-          setMessage('Số lượng vượt quá tồn kho mock.');
-          return;
-        }
-
-        updatedCart[existingIndex] = {
-          ...existing,
-          quantity: newQuantity,
-          unitPrice,
-          subtotal: calculateLineSubtotal(unitPrice, newQuantity),
-        };
-      } else {
-        const newItem: CartItem = {
-          id: crypto.randomUUID(),
-          productId: product.id,
-          productName: product.name,
-          imageUrl: product.imageUrl,
-          size,
-          selectedToppings: [...selectedToppings],
-          unitPrice,
-          quantity,
-          subtotal,
-        };
-
-        updatedCart.push(newItem);
-      }
-
-      localStorage.setItem('brewlite_cart', JSON.stringify(updatedCart));
-
-      // Thông báo cho Header và BottomNav cập nhật badge
-      window.dispatchEvent(new Event('cart_updated'));
 
       setMessage(`Đã thêm ${quantity}x ${product.name} (Size ${size}) vào giỏ hàng!`);
     } catch {

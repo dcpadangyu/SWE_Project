@@ -54,14 +54,35 @@ model Product {
   @@map("products")
 }
 
-// 3. Kích thước đồ uống
+// 3. Phân quyền người dùng (Role) - Task 7
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+// 4. Model Người dùng (User / Customer) - Task 7
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  fullName      String?  @map("full_name")
+  role          Role     @default(CUSTOMER)
+  loyaltyPoints Int      @default(0) @map("loyalty_points")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// 5. Kích thước đồ uống - Task 6
 enum Size {
   S
   M
   L
 }
 
-// 4. Trạng thái đơn hàng (State Machine - ADR-003)
+// 6. Trạng thái đơn hàng (State Machine - ADR-003) - Task 6
 enum OrderStatus {
   PENDING
   PAID
@@ -72,14 +93,12 @@ enum OrderStatus {
   CANCELLED
 }
 
-// 5. Đơn hàng - Tuân thủ class-domain.md (Order)
+// 7. Đơn hàng - Tuân thủ class-domain.md (Order) - Task 6
 model Order {
   id             String      @id @default(uuid())
   // Mã đơn hiển thị cho khách: "#<orderNumber>" (ví dụ #1042)
   orderNumber    Int         @unique @default(autoincrement())
 
-  // Chưa có quan hệ tới User vì bảng User thuộc Task 7 (Auth).
-  // Khi Task 7 merge, thêm @relation tới User tại đây.
   userId         String
 
   status         OrderStatus @default(PENDING)
@@ -101,7 +120,7 @@ model Order {
   @@map("orders")
 }
 
-// 6. Dòng món trong đơn - Tuân thủ class-domain.md (OrderDetail)
+// 8. Dòng món trong đơn - Tuân thủ class-domain.md (OrderDetail) - Task 6
 // Lưu bản chụp (snapshot) tên, topping, giá tại thời điểm đặt.
 model OrderItem {
   id               String  @id @default(uuid())
