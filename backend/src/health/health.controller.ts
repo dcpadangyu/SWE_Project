@@ -10,7 +10,9 @@
  */
 
 import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Health')
 @Controller('health')
 export class HealthController {
   /**
@@ -20,6 +22,19 @@ export class HealthController {
    * @returns Object chứa trạng thái 'ok', tên service, thời gian uptime và timestamp
    */
   @Get()
+  @ApiOperation({ summary: 'Kiểm tra trạng thái sức khỏe dịch vụ (Health Check)' })
+  @ApiOkResponse({
+    description: 'Dịch vụ đang hoạt động bình thường.',
+    schema: {
+      example: {
+        status: 'ok',
+        service: 'brewlite-api',
+        uptime: 120.45,
+        timestamp: '2026-10-30T00:00:00.000Z',
+        environment: 'development',
+      },
+    },
+  })
   check() {
     return {
       status: 'ok',
