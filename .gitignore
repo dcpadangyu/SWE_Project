@@ -2,21 +2,23 @@
 # BREWLITE MONOREPO - GIT IGNORE CONFIGURATION
 # ============================================================================
 
-# Dependencies
+# Installed dependencies (root and workspaces)
 node_modules/
 */node_modules/
 /.pnp
 .pnp.*
 
-# Build outputs
+# Build output and caches
 dist/
 backend/dist/
 frontend/.next/
 frontend/out/
 build/
 */build/
+.cache/
+.turbo/
 
-# TypeScript cache
+# TypeScript build cache
 *.tsbuildinfo
 next-env.d.ts
 
@@ -32,7 +34,8 @@ pnpm-debug.log*
 # Test coverage
 coverage/
 */coverage/
-.nyc_output
+.nyc_output/
+*.lcov
 
 # Environment Variables (Bảo mật - tuyệt đối không commit file chứa credentials)
 .env
@@ -45,6 +48,11 @@ frontend/.env
 frontend/.env.*
 !frontend/.env.example
 
+# Local credentials and private keys
+*.pem
+*.key
+.aws/
+
 # IDE & Editor settings
 .idea/
 .vscode/*
@@ -54,6 +62,8 @@ frontend/.env.*
 .project
 .classpath
 .settings/
+*.swp
+*.swo
 
 # OS generated files
 .DS_Store
@@ -63,6 +73,18 @@ frontend/.env.*
 .Trashes
 ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# Docker data volume directory (nếu mount cục bộ)
-pgdata/
+# Deployment metadata
+.vercel/
+.netlify/
+
+# Local database storage and backups (do not ignore Prisma migration SQL)
+/pgdata/
+/backups/
+*.dump
+
+# Temporary files
+.tmp/
+.temp/
+*.tmp

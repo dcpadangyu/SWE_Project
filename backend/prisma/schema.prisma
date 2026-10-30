@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Model Danh mục
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("categories")
+}
+
+// 2. Model Sản phẩm (Đồ uống) - Tuân thủ class-domain.md
+model Product {
+  id             String    @id @default(uuid())
+  name           String
+  description    String?
+  imageUrl       String?
+  
+  // Giá theo 3 kích thước (S/M/L) - M là mặc định
+  priceS         Decimal   @db.Decimal(10, 2)
+  priceM         Decimal   @db.Decimal(10, 2)
+  priceL         Decimal   @db.Decimal(10, 2)
+
+  // Danh sách topping hợp lệ lưu dạng JSON: [{ id, name, price, isAvailable }]
+  toppingOptions Json      @default("[]")
+
+  // Tồn kho & trạng thái
+  stock          Int       @default(0)
+  isAvailable    Boolean   @default(true)
+  
+  // Dùng cho Optimistic Locking sau này
+  version        Int       @default(0)
+
+  // Khóa ngoại liên kết Danh mục
+  categoryId     String
+  category       Category  @relation(fields: [categoryId], references: [id])
+
+  // Quan hệ ngược: các dòng đơn hàng tham chiếu tới sản phẩm này
+  orderItems     OrderItem[]
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("products")
+}
+
+// 3. Phân quyền người dùng (Role) - Tuân thủ class-domain.md & brewlite.ts (Task 7)
+enum Role {
+  CUSTOMER
+  BARISTA
+  ADMIN
+}
+
+// 4. Model Người dùng (User / Customer) - Task 7
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  fullName      String?  @map("full_name")
+  role          Role     @default(CUSTOMER)
+  loyaltyPoints Int      @default(0) @map("loyalty_points")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// 5. Kích thước đồ uống - Task 6
+enum Size {
+  S
+  M
+  L
+}
+
+// 6. Trạng thái đơn hàng (State Machine - ADR-003) - Task 6
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+}
+
+// 7. Đơn hàng - Tuân thủ class-domain.md (Order) - Task 6
+model Order {
+  id             String      @id @default(uuid())
+  // Mã đơn hiển thị cho khách: "#<orderNumber>" (ví dụ #1042)
+  orderNumber    Int         @unique @default(autoincrement())
+
+  userId         String
+
+  status         OrderStatus @default(PENDING)
+  subtotal       Decimal     @db.Decimal(10, 2)
+  discountAmount Decimal     @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal     @db.Decimal(10, 2)
+  voucherCode    String?
+  note           String?
+
+  // Idempotency-Key của lượt đặt hàng: gửi lại cùng khóa thì trả lại đơn cũ
+  checkoutKey    String      @unique
+
+  items          OrderItem[]
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("orders")
+}
+
+// 8. Dòng món trong đơn - Tuân thủ class-domain.md (OrderDetail) - Task 6
+// Lưu bản chụp (snapshot) tên, topping, giá tại thời điểm đặt.
+model OrderItem {
+  id               String  @id @default(uuid())
+  orderId          String
+  order            Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product @relation(fields: [productId], references: [id])
+
+  productName      String
+  size             Size
+  quantity         Int
+  selectedToppings Json    @default("[]")
+  unitPrice        Decimal @db.Decimal(10, 2)
+  subtotal         Decimal @db.Decimal(10, 2)
+
+  @@index([orderId])
+  @@map("order_items")
+}

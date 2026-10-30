@@ -14,8 +14,8 @@
 | Lifeline | Vai trò | Thành phần mã nguồn dự kiến |
 | :--- | :--- | :--- |
 | **Customer** | Khách hàng thao tác trên điện thoại/trình duyệt. | – |
-| **Next.js UI** | Giao diện PWA mobile-first: giữ giỏ hàng, sinh `Idempotency-Key`, hiển thị loading/lỗi/xác nhận. | `apps/web` (hoặc `frontend/`) |
-| **NestJS API** | `JwtAuthGuard` (xác thực), `ValidationPipe` (validate DTO), `OrdersService`, `PaymentsService`. | `apps/api` (hoặc `backend/`): module `orders`, `payments`, `auth` |
+| **Next.js UI** | Giao diện PWA mobile-first: giữ giỏ hàng, sinh `Idempotency-Key`, hiển thị loading/lỗi/xác nhận. | `frontend/` |
+| **NestJS API** | `JwtAuthGuard` (xác thực), `ValidationPipe` (validate DTO), `OrdersService`, `PaymentsService`. | `backend/`: module `orders`, `payments`, `auth` |
 | **Database** | PostgreSQL: `orders`, `order_items`, `payments`, `products`, `users`, `loyalty_transactions`, `idempotency_keys`. | Migration / entity của backend |
 | **Payment Service** | Cổng thanh toán mô phỏng (Ví điện tử / Thẻ), hỗ trợ `Idempotency-Key` và hoàn tiền. | Mock Payment Gateway |
 
@@ -25,13 +25,13 @@
 
 | API | Header bắt buộc | Request | Response chính |
 | :--- | :--- | :--- | :--- |
-| `POST /orders` | `Authorization: Bearer <JWT>`, `Idempotency-Key` | `items[{productId, size, toppings[], qty}]`, `voucherCode?`, `paymentMethod` | `201` `{orderId, status: PENDING, total}` · `400` · `401` · `409` (hết hàng) |
-| `POST /payments` | `Authorization: Bearer <JWT>`, `Idempotency-Key` | `{orderId, method: WALLET \| CARD}` | `200` `{orderId, status: PAID, total, loyaltyPointsEarned}` · `202` (đang xử lý) · `402` (thanh toán thất bại) · `403`/`409` · `409` (hết hàng sau khi trả) |
-| `GET /orders/:id` | `Authorization: Bearer <JWT>` | – | `200` `{orderId, status, total, items[]}` (chỉ trả đơn của chính người dùng) |
-| Mock Gateway `POST /charge` | `Idempotency-Key` | `{amount, method}` | `200` SUCCESS · `402` bị từ chối · timeout |
+| `POST /orders` | `Authorization: Bearer <JWT>`, `Idempotency-Key` | `items[{productId, size, toppingIds?, quantity}]`, `voucherCode?`, `note?` | `201` `{orderId, orderCode, status: PENDING, subtotal, discountAmount, totalAmount, items[]}` · `400` · `401` · `409` (hết hàng) |
+| `POST /payments` | `Authorization: Bearer <JWT>`, `Idempotency-Key` | `{orderId, paymentMethod: 'E_WALLET' \| 'BANK_CARD'}` | `200` `{orderId, status: PAID, totalAmount, loyaltyPointsEarned}` · `202` (đang xử lý) · `402` (thanh toán thất bại) · `403`/`409` · `409` (hết hàng sau khi trả) |
+| `GET /orders/:id` | `Authorization: Bearer <JWT>` | – | `200` `{orderId, orderCode, status, totalAmount, items[]}` (chỉ trả đơn của chính người dùng) |
+| Mock Gateway `POST /charge` | `Idempotency-Key` | `{amount, paymentMethod}` | `200` SUCCESS · `402` bị từ chối · timeout |
 | Mock Gateway `POST /refund` | – | `{transactionId}` | `200` đã hoàn tiền |
 
-> Tên đường dẫn và mã HTTP là **thiết kế đề xuất** của sơ đồ. Khi backend hiện thực, cần giữ khớp hoặc cập nhật lại sơ đồ qua pull request.
+> Tên đường dẫn, trường dữ liệu (`quantity`, `totalAmount`, `paymentMethod: 'E_WALLET' | 'BANK_CARD'`) được thống nhất xuyên suốt với `class-domain.md`, `types/brewlite.ts` và `CreateOrderDto`.
 
 ---
 
@@ -45,7 +45,7 @@ Số bước trong bảng trùng với số tự động đánh trên sơ đồ.
 | :---: | :--- |
 | 1 | Khách hàng bấm **"Thanh toán"** tại màn hình Giỏ hàng. |
 | 2 | *(E1)* Nếu chưa có JWT: UI lưu giỏ hàng vào localStorage, chuyển tới `/login?redirect=/cart`. Nhánh kết thúc; sau đăng nhập khách bấm lại. |
-| 3 | Đã đăng nhập: UI hiển thị màn hình Thanh toán với tổng tiền và lựa chọn Ví / Thẻ. |
+| 3 | Đã đăng nhập: UI hiển thị màn hình Thanh toán với tổng tiền và lựa chọn Ví (`E_WALLET`) / Thẻ (`BANK_CARD`). |
 | 4 | Khách chọn phương thức và bấm **"Xác nhận trả"**. |
 | 5 | *(E4a)* Nếu thiết bị offline: vô hiệu hóa nút và báo "Không có kết nối mạng"; chưa gọi API nào. |
 | 6 | Có mạng: UI khóa nút (chống bấm đúp, E5) và sinh `Idempotency-Key` **K** (UUID v4) cho lượt thanh toán này. |
@@ -54,26 +54,26 @@ Số bước trong bảng trùng với số tự động đánh trên sơ đồ.
 
 | Bước | Mô tả |
 | :---: | :--- |
-| 7 | UI gọi `POST /orders` kèm JWT, khóa K và nội dung giỏ hàng. **Không gửi tổng tiền.** |
+| 7 | UI gọi `POST /orders` kèm JWT, khóa K và nội dung giỏ hàng (`items`). **Không gửi tổng tiền.** |
 | 8–10 | `JwtAuthGuard` kiểm tra chữ ký và thời hạn token (NFR-03). Sai/hết hạn → `401`, UI chuyển về `/login` và giữ giỏ hàng (E1). |
-| 11–13 | `ValidationPipe` kiểm tra dữ liệu (giỏ không rỗng, `qty > 0`, size thuộc S/M/L, phương thức hợp lệ – NFR-07). Sai → `400` kèm danh sách lỗi. |
-| 14–16 | API tìm đơn có cùng `(user_id, idempotency_key = K)`. Nếu đã có (client gửi lại) → trả lại đơn cũ, **không tạo đơn mới** (E4b). |
+| 11–13 | `ValidationPipe` kiểm tra dữ liệu (giỏ không rỗng, `quantity >= 1`, size thuộc S/M/L – NFR-07). Sai → `400` kèm danh sách lỗi. |
+| 14–16 | API tìm đơn có cùng `(userId, checkoutKey = K)`. Nếu đã có (client gửi lại) → trả lại đơn cũ, **không tạo đơn mới** (E4b). |
 | 17–20 | **Bắt đầu transaction.** Đọc giá, topping, `stock`, `version` và voucher từ DB; **tính lại** thành tiền, giảm giá và tổng tiền ở backend (AC-12.3). |
-| 21–23 | *(E2a)* Có món `stock < qty` → `ROLLBACK`, trả `409` kèm danh sách món thiếu; UI yêu cầu khách sửa giỏ (A2). |
-| 24–26 | Đủ hàng → `INSERT orders` (`PENDING`, `idempotency_key = K`) và `order_items` (lưu giá tại thời điểm đặt) → `COMMIT` → trả `201` `{orderId, status: PENDING, total}`. |
+| 21–23 | *(E2a)* Có món `stock < quantity` → `ROLLBACK`, trả `409` kèm danh sách món thiếu; UI yêu cầu khách sửa giỏ (A2). |
+| 24–26 | Đủ hàng → `INSERT orders` (`PENDING`, `checkoutKey = K`) và `order_items` (lưu giá tại thời điểm đặt) → `COMMIT` → trả `201` `{orderId, orderCode, status: PENDING, totalAmount}`. |
 
 ### Giai đoạn 3 – Thanh toán không tiền mặt (bước 27–60, FR-13)
 
 | Bước | Mô tả |
 | :---: | :--- |
-| 27–28 | UI gọi `POST /payments` với `{orderId, method}`, **cùng khóa K**. API lặp lại bước kiểm tra JWT và validate (thất bại → `401`/`400`). |
+| 27–28 | UI gọi `POST /payments` với `{orderId, paymentMethod}`, **cùng khóa K**. API lặp lại bước kiểm tra JWT và validate (thất bại → `401`/`400`). |
 | 29–32 | API đọc đơn: đơn của người khác hoặc đã ở trạng thái kết thúc (`PAID`, `COMPLETED`, `CANCELLED`) → `403`/`409` (AC-13.5). |
-| 33–35 | API tra bảng `idempotency_keys` theo `(user, endpoint, K)`. Nếu khóa **đã hoàn tất** → trả lại **đúng response đã lưu** (header `Idempotent-Replayed: true`); **không gọi cổng thanh toán**, không trừ tiền lần hai (AC-13.4; E4b, E5). |
+| 33–35 | API tra bảng `idempotency_keys` (hoặc `payments.idempotencyKey`) theo `(user, endpoint, K)`. Nếu khóa **đã hoàn tất** → trả lại **đúng response đã lưu** (header `Idempotent-Replayed: true`); **không gọi cổng thanh toán**, không trừ tiền lần hai (AC-13.4; E4b, E5). |
 | 36–37 | Khóa đang `IN_PROGRESS` (request song song) → `409 Đang xử lý`; UI hiển thị "Đang xác nhận kết quả...". |
 | 38–39 | Khóa mới: `INSERT idempotency_keys (K, IN_PROGRESS)` và `INSERT payments (PENDING)`, rồi gọi `POST /charge` của Payment Service kèm cùng khóa K. |
 | 40–42 | *(E4c)* Cổng timeout → API trả `202` (đang xử lý), đơn giữ `PENDING`; UI hiển thị "Đang xác nhận kết quả..." và **gửi lại với cùng khóa K**. |
 | 43 | Cổng trả thành công `{transactionId, SUCCESS}`. |
-| 44–46 | **Bắt đầu transaction** cập nhật tồn kho bằng optimistic locking: `UPDATE products SET stock = stock - qty, version = version + 1 WHERE id AND version = :v AND stock >= qty`. |
+| 44–46 | **Bắt đầu transaction** cập nhật tồn kho bằng optimistic locking: `UPDATE products SET stock = stock - quantity, version = version + 1 WHERE id AND version = :v AND stock >= quantity`. |
 | 47–51 | *(E2b)* Cập nhật thất bại (hai khách tranh món cuối) → `ROLLBACK`, đơn `CANCELLED`, thanh toán `REFUNDED`, gọi `POST /refund`, trả `409 OUT_OF_STOCK`; UI báo hết hàng, đã hoàn tiền, giữ giỏ. |
 | 52–56 | Thành công → trong cùng transaction: `orders = PAID`, `payments = SUCCESS`, ghi `loyalty_transactions`, cộng `users.loyalty_points`, ghi nhận lượt dùng voucher; lưu response `200` cho khóa K; `COMMIT`; trả `200 {orderId, status: PAID, loyaltyPointsEarned}`; UI xóa giỏ hàng. |
 | 57–60 | *(E3)* Cổng từ chối → `payments = FAILED`, `orders = PAYMENT_FAILED`, lưu response `402` cho khóa K; **không** trừ kho, **không** cộng điểm, **không** dùng voucher. UI báo lỗi, giữ giỏ, cho **"Thử lại"** / **"Đổi phương thức"**. Thử lại dùng **khóa K mới**, đơn `PAYMENT_FAILED → PENDING`, tối đa 3 lần; quá 3 lần → `CANCELLED`. |
@@ -94,7 +94,7 @@ Số bước trong bảng trùng với số tự động đánh trên sơ đồ.
 | Nội dung | Thiết kế |
 | :--- | :--- |
 | **Khóa** | UI sinh `Idempotency-Key` (UUID v4) khi khách bấm "Xác nhận trả"; dùng chung cho `POST /orders` và `POST /payments` của cùng một lượt thanh toán. |
-| **Phạm vi** | Khóa được lưu theo `(user_id, endpoint, key)`; hai người dùng không thể đụng khóa của nhau. |
+| **Phạm vi** | Khóa được lưu theo `(userId, endpoint, key)`; hai người dùng không thể đụng khóa của nhau. |
 | **Trạng thái** | `IN_PROGRESS` → `DONE` (kèm mã HTTP và body của response). |
 | **Gửi lại cùng khóa** | `DONE` → trả lại nguyên response đã lưu, không xử lý lại. `IN_PROGRESS` → `409 Đang xử lý`. |
 | **Cổng thanh toán** | Khóa K cũng được gửi tới Mock Gateway nên cổng không trừ tiền hai lần ngay cả khi API gọi lặp. |
@@ -133,9 +133,9 @@ Chuyển trạng thái trong sơ đồ:
 
 ---
 
-## 7. Giả định thiết kế (cần thống nhất khi hiện thực)
+## 7. Giả định thiết kế (đã thống nhất khi hiện thực)
 
-1. **Hai lời gọi riêng:** `POST /orders` tạo đơn, `POST /payments` thanh toán (theo Happy Path bước 4–5). Cách gộp một API cần cập nhật lại sơ đồ.
-2. **Trừ kho khi thanh toán thành công** (Happy Path bước 6), không giữ chỗ khi tạo đơn. Vì vậy phải có nhánh E2b; nếu nhóm chọn giữ chỗ tồn kho khi tạo đơn thì E2b biến mất.
+1. **Hai lời gọi riêng:** `POST /orders` tạo đơn ở trạng thái `PENDING`, `POST /payments` thực hiện thanh toán (theo Happy Path bước 4–5).
+2. **Trừ kho khi thanh toán thành công** (Happy Path bước 6), không giữ chỗ khi tạo đơn. Vì vậy có nhánh E2b xử lý tranh chấp món cuối cùng bằng Optimistic Locking.
 3. **Voucher** được kiểm tra lại trong T1; lượt dùng chỉ bị trừ khi `PAID` (A1).
-4. Tên bảng (`idempotency_keys`, `loyalty_transactions`...) và mã HTTP là đề xuất; class diagram (Task 2.3) và migration cần đồng bộ với các tên này.
+4. Ánh xạ tên thực thể miền và bảng CSDL: lớp `OrderDetail` trong Class Diagram ánh xạ tới model `OrderItem` (bảng `order_items`), lớp `Voucher` ánh xạ tới khái niệm `Promotion / Voucher`.

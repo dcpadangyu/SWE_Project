@@ -28,7 +28,7 @@ Quy ước:
 | 2   | `-email`         | String        | Bắt buộc, duy nhất, đúng định dạng email    | Địa chỉ dùng để đăng nhập.                                                             |
 | 3   | `-passwordHash`  | String        | Bắt buộc                                    | Mật khẩu đã được băm; sử dụng bcrypt. Không trả trường này về client hoặc ghi vào log. |
 | 4   | `-fullName`      | String [0..1] | Không bắt buộc                              | Họ tên người dùng.                                                                     |
-| 5   | `-phoneNumber`   | String        | Bắt buộc                                    | Số điện thoại liên hệ.                                                                 |
+| 5   | `-phoneNumber`   | String [0..1] | Không bắt buộc (SRS FR-01 chỉ yêu cầu email)| Số điện thoại liên hệ tùy chọn.                                                        |
 | 6   | `-role`          | Role          | Bắt buộc; tài khoản khách mặc định CUSTOMER | Vai trò của tài khoản.                                                                 |
 | 7   | `-loyaltyPoints` | Integer       | Bắt buộc, mặc định 0, không âm              | Số dư điểm thưởng hiện tại.                                                            |
 | 8   | `-createdAt`     | DateTime      | Bắt buộc                                    | Thời điểm tạo tài khoản.                                                               |
@@ -96,7 +96,7 @@ Quy ước:
 
 - `+changeStatus(newStatus: OrderStatus): void`: Chỉ chấp nhận các bước chuyển trong state machine. Việc chuyển PAID được service phối hợp với kết quả thanh toán, kiểm tra/trừ kho, điểm và lượt voucher; không chỉ đổi giá trị enum.
 
-### 2.1.4. Lớp OrderDetail
+### 2.1.4. Lớp OrderDetail (ánh xạ sang model `OrderItem` trong Prisma)
 
 **Tác dụng:** Lưu một dòng món trong đơn, bao gồm cấu hình đã chọn, số lượng và giá tại thời điểm đặt.
 
@@ -147,7 +147,7 @@ Ví dụ: hai ly có cùng cấu hình, mỗi ly giá nước 30.000đ và một
 
 - `+markRefunded(refundedAt: DateTime): void`: Chỉ áp dụng cho Payment đang SUCCESS và sau khi gateway xác nhận hoàn tiền thành công. Cập nhật status thành REFUNDED và ghi refundedAt. Việc hủy Order chưa tự động đồng nghĩa với hoàn tiền thành công.
 
-### 2.1.6. Lớp Voucher
+### 2.1.6. Lớp Voucher (Promotion)
 
 **Tác dụng:** Lưu voucher giảm giá áp dụng qua mã và các điều kiện sử dụng.
 

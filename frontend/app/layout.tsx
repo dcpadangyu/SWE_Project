@@ -10,6 +10,7 @@
  * - Tích hợp Header (Logo + Cart Badge) và Bottom Navigation (4 tabs).
  */
 
+import React, { Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
@@ -61,7 +62,9 @@ export default function RootLayout({
           <main className="flex-1 p-4 overflow-y-auto">{children}</main>
 
           {/* Thanh điều hướng dưới đáy (Menu, Cart, Orders, Profile) */}
-          <BottomNav />
+          <Suspense fallback={null}>
+            <BottomNav />
+          </Suspense>
         </div>
       </body>
     </html>

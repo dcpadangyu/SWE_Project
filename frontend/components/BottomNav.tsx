@@ -13,43 +13,26 @@
  *   3. Lịch sử đơn hàng (Orders)
  *   4. Tài khoản (Profile)
  * - Tự động đổi màu làm nổi bật tab đang xem dựa trên đường dẫn hiện tại (usePathname).
+ * - Cập nhật số lượng giỏ hàng qua Zustand store.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useCartStore } from '@/stores/cartStore';
+
+const emptySubscribe = () => () => {};
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const [cartCount, setCartCount] = useState<number>(0);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+  const cartCount = useCartStore((state) => state.getTotalQuantity());
 
-  // Đọc số lượng giỏ hàng để hiển thị badge phụ trên icon giỏ hàng
-  useEffect(() => {
-    const updateCartBadge = () => {
-      try {
-        const stored = localStorage.getItem('brewlite_cart');
-        if (stored) {
-          const items = JSON.parse(stored);
-          const total = Array.isArray(items)
-            ? items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0)
-            : 0;
-          setCartCount(total);
-        } else {
-          setCartCount(0);
-        }
-      } catch {
-        setCartCount(0);
-      }
-    };
-
-    updateCartBadge();
-    window.addEventListener('storage', updateCartBadge);
-    window.addEventListener('cart_updated', updateCartBadge);
-    return () => {
-      window.removeEventListener('storage', updateCartBadge);
-      window.removeEventListener('cart_updated', updateCartBadge);
-    };
-  }, []);
+  const displayCount = mounted ? cartCount : 0;
 
   // Danh sách các tab điều hướng chuẩn
   const navTabs = [
@@ -81,7 +64,7 @@ export default function BottomNav() {
     {
       name: 'Giỏ hàng',
       href: '/cart',
-      badge: cartCount,
+      badge: displayCount,
       icon: (active: boolean) => (
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -121,7 +104,7 @@ export default function BottomNav() {
     },
     {
       name: 'Tài khoản',
-      href: '/profile',
+      href: '/login',
       icon: (active: boolean) => (
         <svg
           xmlns="http://www.w3.org/2000/svg"

@@ -7,9 +7,13 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy tệp dependency trước để tận dụng Docker layer cache
+# Copy tệp dependency và lược đồ Prisma trước để tận dụng Docker layer cache
 COPY package*.json ./
+COPY prisma ./prisma/
 RUN npm ci
+
+# Sinh Prisma Client trước khi biên dịch TypeScript
+RUN npx prisma generate
 
 # Copy toàn bộ mã nguồn và biên dịch NestJS sang JavaScript (thư mục dist/)
 COPY . .
@@ -23,9 +27,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Cài đặt chỉ các dependencies cần thiết cho môi trường chạy (production)
+# Cài đặt dependencies cho môi trường chạy (production) và sinh Prisma Client
 COPY package*.json ./
-RUN npm ci --only=production
+COPY prisma ./prisma/
+RUN npm ci --omit=dev && npx prisma generate
 
 # Copy mã đã biên dịch từ Stage builder
 COPY --from=builder /app/dist ./dist
@@ -33,5 +38,5 @@ COPY --from=builder /app/dist ./dist
 # Mở cổng API 8080
 EXPOSE 8080
 
-# Khởi chạy ứng dụng
-CMD ["node", "dist/main"]
+# Áp dụng các migration chưa chạy và khởi động ứng dụng (theo ADR-002)
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
