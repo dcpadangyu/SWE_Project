@@ -1,16 +1,76 @@
+# ============================================================================
+# BREWLITE LOCAL ENVIRONMENT - DOCKER COMPOSE
+# ============================================================================
+# Mục đích:
+# Khởi chạy đồng thời 3 dịch vụ ở môi trường phát triển cục bộ:
+# 1. db: Cơ sở dữ liệu quan hệ PostgreSQL 16
+# 2. backend: Dịch vụ NestJS REST API (cổng 8080)
+# 3. frontend: Dịch vụ Next.js PWA Client (cổng 3000)
+#
+# Cách sử dụng:
+# - Chạy riêng DB (khuyến nghị khi dev local): docker compose up -d db
+# - Chạy toàn bộ hệ thống bằng Docker:        docker compose up -d --build
+# - Dừng toàn bộ hệ thống:                    docker compose down
+
 services:
+  # --------------------------------------------------------------------------
+  # 1. CƠ SỞ DỮ LIỆU POSTGRESQL
+  # --------------------------------------------------------------------------
   db:
-    image: postgres:14.1-alpine
+    image: postgres:16-alpine
     container_name: brewlite-db
     restart: always
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin111
-      POSTGRES_DB: my_postgres_DB
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin111}
+      POSTGRES_DB: ${POSTGRES_DB:-brewlite_db}
     ports:
-      - "5435:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-brewlite_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # 2. BACKEND API (NESTJS)
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: brewlite-backend
+    restart: always
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin111}@db:5432/${POSTGRES_DB:-brewlite_db}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_example_brewlite_2026}
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
+  # 3. FRONTEND WEB (NEXT.JS)
+  # --------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: brewlite-frontend
+    restart: always
+    environment:
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
 
 volumes:
   pgdata:
+    driver: local

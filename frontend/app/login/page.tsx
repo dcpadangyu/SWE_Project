@@ -1,13 +1,24 @@
 // frontend/app/login/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient } from '@/utils/apiClient';
 import { authStorage } from '@/utils/authStorage';
 
-export default function LoginPage() {
+interface LoginResponse {
+  accessToken: string;
+  user: {
+    id: string;
+    email: string;
+    fullName?: string | null;
+    role?: string;
+    loyaltyPoints: number;
+  };
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get('redirect') || '/';
@@ -23,15 +34,17 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await apiClient.post('/auth/login', {
+      const response = await apiClient.post<LoginResponse>('/auth/login', {
         email,
         password,
       });
 
       authStorage.setSession(response.accessToken, response.user);
       router.push(redirectUrl);
-    } catch (err: any) {
-      setError(err?.message || 'Email hoặc mật khẩu không đúng');
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : 'Email hoặc mật khẩu không đúng',
+      );
     } finally {
       setLoading(false);
     }
@@ -66,7 +79,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="ban@example.com"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-white text-stone-900 placeholder:text-stone-400 caret-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
             />
           </div>
 
@@ -81,7 +94,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-white text-stone-900 placeholder:text-stone-400 caret-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
             />
           </div>
 
@@ -105,5 +118,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-4 flex justify-center items-center min-h-[50vh] text-stone-500">
+          Đang tải trang đăng nhập...
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

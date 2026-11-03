@@ -10,8 +10,6 @@
  * - Chuẩn hóa xử lý lỗi phản hồi từ máy chủ.
  */
 
-import { ApiResponse } from '@/types/brewlite';
-
 // Địa chỉ gốc của Backend API (ưu tiên biến môi trường NEXT_PUBLIC_API_URL)
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -83,8 +81,9 @@ export async function apiRequest<T>(
 
     // Đọc và trả về dữ liệu JSON
     return (await response.json()) as T;
-  } catch (error: any) {
-    console.error(`[API Error] Thất bại khi gọi ${fullUrl}:`, error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[API Error] Thất bại khi gọi ${fullUrl}:`, message);
     throw error;
   }
 }

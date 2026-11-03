@@ -1,12 +1,12 @@
 // frontend/app/register/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient } from '@/utils/apiClient';
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get('redirect') || '/';
@@ -37,8 +37,12 @@ export default function RegisterPage() {
       setTimeout(() => {
         router.push(loginHref);
       }, 1200);
-    } catch (err: any) {
-      setError(err?.message || 'Dữ liệu đăng ký không hợp lệ hoặc email đã tồn tại');
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Dữ liệu đăng ký không hợp lệ hoặc email đã tồn tại',
+      );
     } finally {
       setLoading(false);
     }
@@ -76,7 +80,7 @@ export default function RegisterPage() {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Nguyễn Văn A"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-white text-stone-900 placeholder:text-stone-400 caret-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
             />
           </div>
 
@@ -90,7 +94,7 @@ export default function RegisterPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="ban@example.com"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-white text-stone-900 placeholder:text-stone-400 caret-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
             />
           </div>
 
@@ -105,7 +109,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-white text-stone-900 placeholder:text-stone-400 caret-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-600 text-sm"
             />
           </div>
 
@@ -129,5 +133,19 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-4 flex justify-center items-center min-h-[50vh] text-stone-500">
+          Đang tải trang đăng ký...
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }

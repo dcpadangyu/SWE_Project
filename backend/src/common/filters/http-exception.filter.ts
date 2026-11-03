@@ -41,6 +41,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Đã có lỗi xảy ra trên hệ thống. Vui lòng thử lại sau.';
     let errors: any = undefined;
+    // Mã lỗi nghiệp vụ và dữ liệu kèm theo (ví dụ OUT_OF_STOCK + danh sách món thiếu)
+    let code: string | undefined = undefined;
+    let details: unknown = undefined;
 
     // 1. Nếu là lỗi HTTP do NestJS chủ động ném ra (400, 401, 403, 404, 409...)
     if (exception instanceof HttpException) {
@@ -54,6 +57,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message = respObj['message'] || exception.message;
         // Bắt mảng lỗi validate từ ValidationPipe nếu có
         errors = respObj['errors'] || (Array.isArray(respObj['message']) ? respObj['message'] : undefined);
+        code = respObj['code'];
+        details = respObj['details'];
       }
     } 
     // 2. Nếu là lỗi hệ thống không mong đợi (Unhandle Error, Database Connection Crash...)
@@ -68,6 +73,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       message: Array.isArray(errors) ? errors[0] : message,
       errors: errors,
+      code: code,
+      details: details,
       timestamp: new Date().toISOString(),
       path: request.url,
     });
