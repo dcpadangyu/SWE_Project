@@ -5,6 +5,9 @@ import {
   Headers,
   Post,
   Res,
+  Get,
+  Param,
+  ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -16,6 +19,8 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiNotFoundResponse,
+  ApiParam,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { randomUUID } from 'node:crypto';
@@ -30,6 +35,38 @@ interface AuthenticatedUser {
   email: string;
   role?: string;
 }
+
+/** Ví dụ một đơn hàng, dùng chung cho GET /orders/me và GET /orders/:id trong Swagger. */
+const Order_Example = {
+  orderId: '441df135-c462-46c6-94ef-f4b3de09d92f',
+  orderCode: '#1042',
+  status: 'PENDING',
+  subtotal: '104000.00',
+  discountAmount: '0.00',
+  totalAmount: '104000.00',
+  note: null,
+  createdAt: '2026-10-30T00:00:00.000Z',
+  items: [
+    {
+      productId: '20000000-0000-4000-8000-000000000004',
+      productName: 'Trà đào',
+      size: 'L',
+      quantity: 2,
+      selectedToppings: [{ id: 'extra-peach', name: 'Thêm đào', price: 8000 }],
+      unitPrice: '52000.00',
+      subtotal: '104000.00',
+    },
+  ],
+};
+
+/** Ví dụ phản hồi lỗi theo định dạng của AllExceptionsFilter. */
+const Error_Example = (statusCode: number, message: string) => ({
+  success: false,
+  statusCode,
+  message,
+  timestamp: '2026-10-30T00:00:00.000Z',
+  path: '/orders',
+});
 
 @ApiTags('Orders')
 @ApiBearerAuth()
@@ -46,7 +83,9 @@ export class OrdersController {
    * không tạo đơn mới. Nếu thiếu, server tự sinh khóa.
    */
   @Post()
-  @ApiOperation({ summary: 'Tạo đơn hàng mới ở trạng thái PENDING từ giỏ hàng (FR-12)' })
+  @ApiOperation({
+    summary: 'Tạo đơn hàng mới ở trạng thái PENDING từ giỏ hàng (FR-12)',
+  })
   @ApiHeader({
     name: 'Idempotency-Key',
     required: false,
@@ -83,7 +122,8 @@ export class OrdersController {
     },
   })
   @ApiOkResponse({
-    description: 'Trả lại đơn hàng cũ khi gửi trùng Idempotency-Key (Idempotent Replay).',
+    description:
+      'Trả lại đơn hàng cũ khi gửi trùng Idempotency-Key (Idempotent Replay).',
   })
   @ApiBadRequestResponse({
     description:
@@ -121,5 +161,64 @@ export class OrdersController {
       );
     }
     return key;
+  }
+
+  @Get('me')
+  @ApiOperation({
+    summary: 'Lịch sử đơn hàng của tôi, mới nhất lên đầu (FR-15)',
+  })
+  @ApiOkResponse({
+    description:
+      'Danh sách đơn của user đang đăng nhập (createdAt giảm dần). Mảng rỗng nếu chưa có đơn.',
+    schema: { example: [Order_Example] },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Chưa đăng nhập hoặc JWT không hợp lệ.',
+    schema: {
+      example: Error_Example(
+        401,
+        'Vui lòng đăng nhập để thực hiện thao tác này',
+      ),
+    },
+  })
+  findMyOrders(@CurrentUser() user: AuthenticatedUser) {
+    return this.ordersService.findMyOrders(user.id);
+  }
+
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Chi tiết một đơn hàng của tôi, kèm items và topping',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'orderId của đơn hàng' })
+  @ApiOkResponse({
+    description:
+      'Chi tiết đơn hàng (cùng cấu trúc phần tử của GET /orders/me).',
+    schema: { example: Order_Example },
+  })
+  @ApiBadRequestResponse({
+    description: 'id không phải UUID hợp lệ.',
+    schema: {
+      example: Error_Example(400, 'Validation failed (uuid is expected)'),
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Chưa đăng nhập hoặc JWT không hợp lệ.',
+    schema: {
+      example: Error_Example(
+        401,
+        'Vui lòng đăng nhập để thực hiện thao tác này',
+      ),
+    },
+  })
+  @ApiNotFoundResponse({
+    description:
+      'Không có đơn này, hoặc đơn thuộc người dùng khác (cố ý không phân biệt hai trường hợp).',
+    schema: { example: Error_Example(404, 'Không tìm thấy đơn hàng.') },
+  })
+  findOne(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.ordersService.findOneForUser(user.id, id);
   }
 }

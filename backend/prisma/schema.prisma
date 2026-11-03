@@ -112,6 +112,7 @@ model Order {
   checkoutKey    String      @unique
 
   items          OrderItem[]
+  payments       Payment[]
 
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
@@ -138,4 +139,48 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+// 9. Phương thức thanh toán - Tuân thủ class-domain.md & sequence-checkout.md (Task 8)
+enum PaymentMethod {
+  E_WALLET
+  BANK_CARD
+}
+
+// 10. Trạng thái thanh toán - Tuân thủ class-domain.md (Task 8)
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+// 11. Giao dịch thanh toán - Tuân thủ class-domain.md (Payment) - Task 8 & Task 10
+model Payment {
+  id              String        @id @default(uuid())
+  orderId         String        @map("order_id")
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Thứ tự lần thử thanh toán từ 1 đến 3 (use case E3)
+  attemptNumber   Int           @default(1) @map("attempt_number")
+
+  // Idempotency-Key của lần thanh toán (chống thanh toán trùng - AC-13.4, Task 10.2)
+  idempotencyKey  String        @unique @map("idempotency_key")
+
+  paymentMethod   PaymentMethod @map("payment_method")
+  amount          Decimal       @db.Decimal(10, 2)
+  status          PaymentStatus @default(PENDING)
+
+  // Mã giao dịch từ cổng thanh toán (Mock Gateway)
+  transactionCode String?       @map("transaction_code")
+  errorMessage    String?       @map("error_message")
+  errorCode       String?       @map("error_code")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  completedAt     DateTime?     @map("completed_at")
+  refundedAt      DateTime?     @map("refunded_at")
+
+  @@unique([orderId, attemptNumber])
+  @@index([orderId])
+  @@map("payments")
 }

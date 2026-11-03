@@ -6,6 +6,7 @@ import { ProductsModule } from './Product/products.module';
 import { HealthModule } from './health/health.module';
 import { OrdersModule } from './orders/orders.module';
 import { AuthModule } from './auth/auth.module';
+import { PaymentsModule } from './payments/payments.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -15,6 +16,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     HealthModule,
     OrdersModule,
     AuthModule,
+    PaymentsModule,
     ObserveModule.forRoot({
       appKey: process.env.OBSERVE_APP_KEY || 'YOUR_APP_KEY',
       appSecret: process.env.OBSERVE_APP_SECRET || 'YOUR_APP_SECRET',

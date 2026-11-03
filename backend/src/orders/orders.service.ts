@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -26,15 +27,6 @@ export interface CreateOrderResult {
 @Injectable()
 export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
-
-  /**
-   * Tạo đơn hàng PENDING từ giỏ hàng (FR-12).
-   *
-   * - Gửi lại cùng (userId, checkoutKey): trả lại đơn cũ, không tạo đơn thứ hai.
-   * - Giá, thành tiền, tổng tiền do backend tự tính từ DB (AC-12.3).
-   * - Kiểm tra tồn kho nhưng KHÔNG trừ kho (chỉ trừ khi thanh toán thành công).
-   * - Toàn bộ trong một transaction: lỗi ở bất kỳ món nào thì không có đơn nào được lưu (AC-12.5).
-   */
   async create(
     userId: string,
     checkoutKey: string,
@@ -100,7 +92,9 @@ export class OrdersService {
             'Idempotency-Key này đã được sử dụng. Vui lòng tạo khóa mới.',
           );
         }
-        if (['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(error.code)) {
+        if (
+          ['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(error.code)
+        ) {
           throw new ServiceUnavailableException(
             'Tạm thời không thể xử lý đơn hàng. Vui lòng thử lại sau.',
           );
@@ -138,5 +132,28 @@ export class OrdersService {
         subtotal: item.subtotal.toFixed(2),
       })),
     };
+  }
+  /** Lịch sử đơn của chính user, mới nhất lên đầu. */
+  async findMyOrders(userId: string) {
+    const orders = await this.prisma.order.findMany({
+      where: { userId },
+      include: orderWithItems.include,
+      orderBy: [{ createdAt: 'desc' }, { orderNumber: 'desc' }],
+    });
+    return orders.map((order) => this.toResponse(order));
+  }
+
+  /** Chi tiết một đơn. Chỉ chủ đơn xem được; đơn người khác trả 404. */
+  async findOneForUser(userId: string, orderId: string) {
+    // Lọc theo cả userId ngay trong truy vấn: đơn của người khác cũng trả 404
+    // để không lộ id nào tồn tại. KHÔNG đổi thành findUnique({ id }) rồi so sánh sau.
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId },
+      include: orderWithItems.include,
+    });
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+    return this.toResponse(order);
   }
 }
