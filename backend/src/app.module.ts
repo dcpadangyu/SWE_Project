@@ -6,7 +6,6 @@ import { ProductsModule } from './Product/products.module';
 import { HealthModule } from './health/health.module';
 import { OrdersModule } from './orders/orders.module';
 import { AuthModule } from './auth/auth.module';
-import { PaymentsModule } from './payments/payments.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
