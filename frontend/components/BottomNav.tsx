@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
 /**
  * ============================================================================
  * BOTTOM NAVIGATION BAR (THANH ĐIỀU HƯỚNG CHÂN TRANG MOBILE-FIRST)
  * ============================================================================
- * 
+ *
  * Mục đích:
  * - Cố định ở đáy màn hình điện thoại (Fixed Bottom Nav) theo đúng Wireframe Mục 7.
  * - Cho phép khách hàng chuyển đổi nhanh giữa 4 phân hệ chính:
@@ -16,10 +16,11 @@
  * - Cập nhật số lượng giỏ hàng qua Zustand store.
  */
 
-import React, { useSyncExternalStore } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useCartStore } from '@/stores/cartStore';
+import React, { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useCartStore } from "@/stores/cartStore";
+import { authStorage } from "@/utils/authStorage";
 
 const emptySubscribe = () => () => {};
 
@@ -34,15 +35,26 @@ export default function BottomNav() {
 
   const displayCount = mounted ? cartCount : 0;
 
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkAuth = () => {
+      setIsLoggedIn(Boolean(authStorage.getToken()));
+    };
+    checkAuth();
+    window.addEventListener("auth_updated", checkAuth);
+    return () => window.removeEventListener("auth_updated", checkAuth);
+  }, []);
+
   // Danh sách các tab điều hướng chuẩn
   const navTabs = [
     {
-      name: 'Thực đơn',
-      href: '/',
+      name: "Thực đơn",
+      href: "/",
       icon: (active: boolean) => (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          className={`h-6 w-6 ${active ? 'text-amber-800' : 'text-slate-400'}`}
+          className={`h-6 w-6 ${active ? "text-amber-800" : "text-slate-400"}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -62,13 +74,13 @@ export default function BottomNav() {
       ),
     },
     {
-      name: 'Giỏ hàng',
-      href: '/cart',
+      name: "Giỏ hàng",
+      href: "/cart",
       badge: displayCount,
       icon: (active: boolean) => (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          className={`h-6 w-6 ${active ? 'text-amber-800' : 'text-slate-400'}`}
+          className={`h-6 w-6 ${active ? "text-amber-800" : "text-slate-400"}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -83,12 +95,12 @@ export default function BottomNav() {
       ),
     },
     {
-      name: 'Đơn hàng',
-      href: '/orders',
+      name: "Đơn hàng",
+      href: "/orders",
       icon: (active: boolean) => (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          className={`h-6 w-6 ${active ? 'text-amber-800' : 'text-slate-400'}`}
+          className={`h-6 w-6 ${active ? "text-amber-800" : "text-slate-400"}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -103,12 +115,13 @@ export default function BottomNav() {
       ),
     },
     {
-      name: 'Tài khoản',
-      href: '/login',
+      name: "Tài khoản",
+      href: isLoggedIn ? "/UserProfile" : "/login",
+      customActive: pathname === "/UserProfile" || pathname === "/login",
       icon: (active: boolean) => (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          className={`h-6 w-6 ${active ? 'text-amber-800' : 'text-slate-400'}`}
+          className={`h-6 w-6 ${active ? "text-amber-800" : "text-slate-400"}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -128,14 +141,19 @@ export default function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 z-40 mx-auto max-w-md border-t border-slate-200 bg-white/95 backdrop-blur shadow-lg">
       <div className="grid grid-cols-4 py-1.5">
         {navTabs.map((tab) => {
-          const isActive = pathname === tab.href;
+          const isActive =
+            tab.customActive !== undefined
+              ? tab.customActive
+              : pathname === tab.href;
 
           return (
             <Link
               key={tab.name}
               href={tab.href}
               className={`flex flex-col items-center justify-center py-1 transition-colors ${
-                isActive ? 'text-amber-800 font-bold' : 'text-slate-500 hover:text-amber-700'
+                isActive
+                  ? "text-amber-800 font-bold"
+                  : "text-slate-500 hover:text-amber-700"
               }`}
             >
               <div className="relative">
@@ -143,11 +161,13 @@ export default function BottomNav() {
                 {/* Badge phụ hiển thị trên icon Giỏ hàng */}
                 {Boolean(tab.badge && tab.badge > 0) && (
                   <span className="absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-xs">
-                    {tab.badge! > 99 ? '99+' : tab.badge}
+                    {tab.badge! > 99 ? "99+" : tab.badge}
                   </span>
                 )}
               </div>
-              <span className={`text-[11px] mt-0.5 ${isActive ? 'font-semibold text-amber-800' : ''}`}>
+              <span
+                className={`text-[11px] mt-0.5 ${isActive ? "font-semibold text-amber-800" : ""}`}
+              >
                 {tab.name}
               </span>
             </Link>

@@ -7,11 +7,17 @@ import { ProductGrid } from "../components/ProductGrid";
 import { apiClient } from "../utils/apiClient";
 import { MOCK_PRODUCTS } from "../utils/mockProducts";
 
+const CATEGORIES = [
+  { id: "ALL", label: "Tất cả món" },
+  { id: "COFFEE", label: "Cà phê" },
+  { id: "TEA", label: "Trà & Khác" },
+];
+
 export default function Home() {
   const router = useRouter();
 
   const [loadedProducts, setLoadedProducts] = useState<Product[]>(MOCK_PRODUCTS);
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState<number>(0);
@@ -23,14 +29,13 @@ export default function Home() {
       .then((data) => {
         if (ignore) return;
         setLoadedProducts(data);
-        setProducts(data);
         setError(null);
       })
       .catch(() => {
         if (ignore) return;
-        // Fallback sang MOCK_PRODUCTS nếu Backend chưa bật để UI demo vẫn hoạt động mượt mà
+        // Fallback sang MOCK_PRODUCTS nếu Backend chưa bật kèm thông báo cảnh báo lỗi
         setLoadedProducts(MOCK_PRODUCTS);
-        setProducts(MOCK_PRODUCTS);
+        setError("Không thể kết nối đến máy chủ API. Đang hiển thị thực đơn mẫu.");
       })
       .finally(() => {
         if (!ignore) {
@@ -54,32 +59,57 @@ export default function Home() {
     router.push(`/products/${product.id}`);
   };
 
-  const handleShowAll = () => {
-    setIsLoading(false);
-    setError(null);
-    setProducts(loadedProducts);
-  };
-
-  const handleShowEmpty = () => {
-    setIsLoading(false);
-    setError(null);
-    setProducts([]);
-  };
+  const filteredProducts = loadedProducts.filter((product) => {
+    if (selectedCategory === "ALL") return true;
+    const cat = (product.category || "").toUpperCase();
+    const name = product.name.toLowerCase();
+    if (selectedCategory === "COFFEE") {
+      return (
+        cat.includes("COFFEE") ||
+        cat.includes("CÀ PHÊ") ||
+        name.includes("cà phê") ||
+        name.includes("cappuccino") ||
+        name.includes("americano") ||
+        name.includes("bạc xỉu")
+      );
+    }
+    if (selectedCategory === "TEA") {
+      return cat.includes("TEA") || cat.includes("TRÀ") || name.includes("trà");
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6 pb-24">
       {/* BANNER CHÀO MỪNG */}
       <div className="rounded-2xl bg-gradient-to-r from-amber-800 to-amber-950 p-5 text-white shadow-md">
         <span className="inline-block rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-300">
-          Ưu đãi hôm nay ✨
+          Cà phê không dùng tiền mặt ✨
         </span>
         <h2 className="mt-2 text-xl font-black tracking-tight">
-          Cà phê ngon mỗi sớm mai
+          BrewLite — Cà phê không tiền mặt
         </h2>
         <p className="mt-1 text-xs text-amber-200">
-          Đặt món trực tuyến, quét mã nhận nước tại quầy trong 60 giây!
+          Đặt món &amp; thanh toán trực tuyến chỉ trong vài chạm, nhận nước nhanh tại quầy không cần xếp hàng!
         </p>
       </div>
+
+      {/* CẢNH BÁO KẾT NỐI API (ERROR/WARNING STATE) */}
+      {error && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
+        >
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="shrink-0 inline-flex items-center rounded-lg bg-amber-800 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-900 active:scale-95"
+          >
+            Thử lại ↻
+          </button>
+        </div>
+      )}
 
       {/* KHU VỰC THỰC ĐƠN */}
       <div className="space-y-4">
@@ -94,69 +124,32 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Nút mô phỏng trạng thái (Hỗ trợ demo & chấm điểm) */}
+        {/* Bộ lọc danh mục sản phẩm */}
         <div className="flex gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
-          <button
-            type="button"
-            onClick={handleShowAll}
-            className={`px-3 py-1.5 rounded-full font-medium shrink-0 transition ${
-              !isLoading && !error && products.length > 0
-                ? "bg-amber-800 text-white shadow-sm"
-                : "bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
-            }`}
-          >
-            Tất cả món
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setIsLoading(!isLoading);
-            }}
-            className={`px-3 py-1.5 rounded-full font-medium shrink-0 transition ${
-              isLoading
-                ? "bg-amber-800 text-white shadow-sm"
-                : "bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
-            }`}
-          >
-            Mô phỏng Tải
-          </button>
-          <button
-            type="button"
-            onClick={handleShowEmpty}
-            className={`px-3 py-1.5 rounded-full font-medium shrink-0 transition ${
-              products.length === 0 && !isLoading && !error
-                ? "bg-amber-800 text-white shadow-sm"
-                : "bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
-            }`}
-          >
-            Trạng thái Trống
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setIsLoading(false);
-              setError(
-                error
-                  ? null
-                  : "Không thể kết nối đến máy chủ API. Vui lòng thử lại sau.",
-              );
-            }}
-            className={`px-3 py-1.5 rounded-full font-medium shrink-0 transition ${
-              error
-                ? "bg-red-600 text-white shadow-sm"
-                : "bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
-            }`}
-          >
-            Mô phỏng Lỗi
-          </button>
+          {CATEGORIES.map((cat) => {
+            const isActive = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-full font-medium shrink-0 transition ${
+                  isActive
+                    ? "bg-amber-800 text-white shadow-sm"
+                    : "bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Component Lưới Sản Phẩm */}
         <ProductGrid
-          products={products}
+          products={filteredProducts}
           isLoading={isLoading}
-          error={error}
+          error={null}
           onRetry={handleRetry}
           onSelectProduct={handleSelectProduct}
         />

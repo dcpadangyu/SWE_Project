@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -237,9 +238,28 @@ async function main() {
         update: voucher as any,
       });
     }
+
+    // 4. Nạp User mặc định cho việc kiểm thử
+    const saltRounds = 10;
+    const defaultPasswordHash = await bcrypt.hash('123456', saltRounds);
+    await tx.user.upsert({
+      where: { email: ' ' },
+      create: {
+        email: 'customer@gmail.com',
+        passwordHash: defaultPasswordHash,
+        fullName: 'Nguyễn Văn A',
+        role: 'CUSTOMER',
+        loyaltyPoints: 0,
+      },
+      update: {
+        passwordHash: defaultPasswordHash,
+        fullName: 'Nguyễn Văn A',
+        role: 'CUSTOMER',
+      },
+    });
   }); // <--- ĐÓNG TRANSACTION Ở ĐÂY LÀ ĐÚNG
 
-  console.log('Đã seed 2 danh mục, 10 sản phẩm và 3 voucher.');
+  console.log('Đã seed 2 danh mục, 10 sản phẩm, 3 voucher và 1 tài khoản khách hàng mặc định (customer@gmail.com).');
 }
 
 main()

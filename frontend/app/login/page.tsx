@@ -1,11 +1,11 @@
 // frontend/app/login/page.tsx
-'use client';
+"use client";
 
-import React, { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { apiClient } from '@/utils/apiClient';
-import { authStorage } from '@/utils/authStorage';
+import React, { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { apiClient } from "@/utils/apiClient";
+import { authStorage } from "@/utils/authStorage";
 
 interface LoginResponse {
   accessToken: string;
@@ -21,12 +21,20 @@ interface LoginResponse {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectUrl = searchParams.get('redirect') || '/';
+  const redirectUrl = searchParams.get("redirect") || "/";
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (authStorage.getToken()) {
+      const destination =
+        redirectUrl && redirectUrl !== "/" ? redirectUrl : "/UserProfile";
+      router.replace(destination);
+    }
+  }, [redirectUrl, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,16 +42,18 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const response = await apiClient.post<LoginResponse>('/auth/login', {
+      const response = await apiClient.post<LoginResponse>("/auth/login", {
         email,
         password,
       });
 
       authStorage.setSession(response.accessToken, response.user);
-      router.push(redirectUrl);
+      const destination =
+        redirectUrl && redirectUrl !== "/" ? redirectUrl : "/UserProfile";
+      router.push(destination);
     } catch (err: unknown) {
       setError(
-        err instanceof Error ? err.message : 'Email hoặc mật khẩu không đúng',
+        err instanceof Error ? err.message : "Email hoặc mật khẩu không đúng",
       );
     } finally {
       setLoading(false);
@@ -103,12 +113,12 @@ function LoginForm() {
             disabled={loading}
             className="w-full py-3 rounded-xl bg-amber-700 hover:bg-amber-800 disabled:bg-stone-400 text-white font-semibold text-sm transition"
           >
-            {loading ? 'Đang xác thực...' : 'Đăng nhập'}
+            {loading ? "Đang xác thực..." : "Đăng nhập"}
           </button>
         </form>
 
         <p className="mt-5 text-center text-sm text-stone-600">
-          Chưa có tài khoản?{' '}
+          Chưa có tài khoản?{" "}
           <Link
             href={registerHref}
             className="text-amber-700 font-semibold hover:underline"

@@ -99,7 +99,7 @@ export class AuthController {
     },
   })
   @ApiUnauthorizedResponse({ description: 'Chưa đăng nhập hoặc JWT token không hợp lệ / hết hạn.' })
-  async getProfile(@CurrentUser() user: unknown) {
-    return user;
+  async getProfile(@CurrentUser() user: { id: string }) {
+    return this.authService.getProfile(user.id);
   }
 }

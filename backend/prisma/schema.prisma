@@ -110,7 +110,7 @@ model Order {
   checkoutKey String @unique @map("checkout_key")
 
   items               OrderItem[]
-  payments            Payment[] // Chuyển từ Payment? sang Payment[]
+  payments            Payment[]
   loyaltyTransactions LoyaltyTransaction[]
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -139,42 +139,53 @@ model OrderItem {
   @@map("order_items")
 }
 
-// ==========================================
-// CÁC THỰC THỂ MỚI BỔ SUNG CHO TASK 7 & 10
-// ==========================================
-
-// 9. Model Thanh toán (Payment)
+// 9. Phương thức thanh toán - Tuân thủ class-domain.md & sequence-checkout.md (Task 8)
 enum PaymentMethod {
   E_WALLET
   BANK_CARD
 }
 
+// 10. Trạng thái thanh toán - Tuân thủ class-domain.md (Task 8)
 enum PaymentStatus {
   PENDING
   SUCCESS
   FAILED
+  REFUNDED
 }
 
+// 11. Giao dịch thanh toán - Tuân thủ class-domain.md (Payment) - Task 8 & Task 10
 model Payment {
-  id            String        @id @default(uuid())
-  orderId       String        @map("order_id") // Đã bỏ @unique
-  order         Order         @relation(fields: [orderId], references: [id])
-  attemptNumber Int           @default(1) @map("attempt_number")
-  paymentMethod PaymentMethod @map("payment_method")
-  status        PaymentStatus @default(PENDING)
-  amount        Decimal       @db.Decimal(10, 2)
+  id              String        @id @default(uuid())
+  orderId         String        @map("order_id")
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  idempotencyKey String @unique @map("idempotency_key")
+  // Thứ tự lần thử thanh toán từ 1 đến 3 (use case E3)
+  attemptNumber   Int           @default(1) @map("attempt_number")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  // Idempotency-Key của lần thanh toán (chống thanh toán trùng - AC-13.4, Task 10.2)
+  idempotencyKey  String        @unique @map("idempotency_key")
 
-  @@unique([orderId, attemptNumber]) // Khóa duy nhất kép
+  paymentMethod   PaymentMethod @map("payment_method")
+  amount          Decimal       @db.Decimal(10, 2)
+  status          PaymentStatus @default(PENDING)
+
+  // Mã giao dịch từ cổng thanh toán (Mock Gateway)
+  transactionCode String?       @map("transaction_code")
+  errorMessage    String?       @map("error_message")
+  errorCode       String?       @map("error_code")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  completedAt     DateTime?     @map("completed_at")
+  refundedAt      DateTime?     @map("refunded_at")
+
+  @@unique([orderId, attemptNumber])
+  @@index([orderId])
   @@map("payments")
 }
 
-// 10. Model Khuyến mãi (Voucher)
-enum DiscountType { // Đổi tên từ VoucherType
+// 12. Model Khuyến mãi (Voucher) - Tuân thủ class-domain.md (Task 7 & Task 10)
+enum DiscountType {
   FIXED_AMOUNT
   PERCENTAGE
 }
@@ -184,7 +195,7 @@ model Voucher {
   code          String       @unique
   discountType  DiscountType @map("discount_type")
   discountValue Decimal      @map("discount_value") @db.Decimal(10, 2)
-  
+
   minOrderValue Decimal?     @map("min_order_value") @db.Decimal(10, 2)
   maxDiscount   Decimal?     @map("max_discount") @db.Decimal(10, 2)
   usageLimit    Int?         @map("usage_limit")
@@ -200,7 +211,7 @@ model Voucher {
   @@map("vouchers")
 }
 
-// 11. Model Lịch sử điểm thưởng (LoyaltyTransaction)
+// 13. Model Lịch sử điểm thưởng (LoyaltyTransaction) - Task 7
 enum TransactionType {
   EARN
   REDEEM

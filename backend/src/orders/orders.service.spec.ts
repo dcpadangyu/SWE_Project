@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrdersService } from './orders.service';
@@ -59,7 +64,10 @@ function makeService() {
     order: { create: jest.fn() },
   };
   const prisma = {
-    order: { findFirst: jest.fn().mockResolvedValue(null) },
+    order: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     $transaction: jest.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
   };
   const service = new OrdersService(prisma as never);
@@ -152,6 +160,143 @@ describe('OrdersService.create', () => {
     tx.product.findMany.mockResolvedValue([]);
     await expect(service.create(USER, 'key-3', dto())).rejects.toThrow(BadRequestException);
     expect(tx.order.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrdersService.findMyOrders', () => {
+  const OTHER_USER = 'u0000000-0000-4000-8000-000000000002';
+
+  it('chỉ lọc đơn theo userId của người gọi', async () => {
+    const { service, prisma } = makeService();
+    prisma.order.findMany.mockResolvedValue([storedOrder()]);
+
+    await service.findMyOrders(USER);
+
+    expect(prisma.order.findMany).toHaveBeenCalledTimes(1);
+    const args = prisma.order.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ userId: USER });
+    expect(args.where.userId).not.toBe(OTHER_USER);
+  });
+
+  it('sắp xếp đơn mới nhất lên đầu (createdAt giảm dần)', async () => {
+    const { service, prisma } = makeService();
+
+    await service.findMyOrders(USER);
+
+    const args = prisma.order.findMany.mock.calls[0][0];
+    expect(args.orderBy[0]).toEqual({ createdAt: 'desc' });
+  });
+
+  it('lấy kèm items của từng đơn', async () => {
+    const { service, prisma } = makeService();
+
+    await service.findMyOrders(USER);
+
+    const args = prisma.order.findMany.mock.calls[0][0];
+    expect(args.include).toHaveProperty('items');
+  });
+
+  it('định dạng mỗi đơn giống POST /orders (mã đơn, tiền dạng chuỗi, items kèm topping)', async () => {
+    const { service, prisma } = makeService();
+    const withTopping = storedOrder();
+    withTopping.items[0].selectedToppings = [
+      { id: 'jelly', name: 'Thạch', price: 5000 },
+    ] as never;
+    prisma.order.findMany.mockResolvedValue([withTopping]);
+
+    const result = await service.findMyOrders(USER);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].orderCode).toBe('#1042');
+    expect(result[0].totalAmount).toBe('78000.00');
+    expect(result[0].items[0].unitPrice).toBe('39000.00');
+    expect(result[0].items[0].selectedToppings).toEqual([
+      { id: 'jelly', name: 'Thạch', price: 5000 },
+    ]);
+  });
+
+  it('giữ nguyên thứ tự DB trả về, đơn mới đứng trước', async () => {
+    const { service, prisma } = makeService();
+    prisma.order.findMany.mockResolvedValue([
+      storedOrder({ id: 'moi', orderNumber: 1043 }),
+      storedOrder({ id: 'cu', orderNumber: 1042 }),
+    ]);
+
+    const result = await service.findMyOrders(USER);
+
+    expect(result.map((o) => o.orderId)).toEqual(['moi', 'cu']);
+  });
+
+  it('trả mảng rỗng (không lỗi) khi user chưa có đơn nào', async () => {
+    const { service, prisma } = makeService();
+    prisma.order.findMany.mockResolvedValue([]);
+
+    await expect(service.findMyOrders(USER)).resolves.toEqual([]);
+  });
+});
+
+describe('OrdersService.findOneForUser', () => {
+  const OTHER_USER = 'u0000000-0000-4000-8000-000000000002';
+
+  it('chủ đơn xem được chi tiết kèm items', async () => {
+    const { service, prisma } = makeService();
+    prisma.order.findFirst.mockResolvedValue(storedOrder());
+
+    const result = await service.findOneForUser(USER, 'order-1');
+
+    expect(result.orderId).toBe('order-1');
+    expect(result.orderCode).toBe('#1042');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].productName).toBe('Trà đào');
+  });
+
+  it('truy vấn theo cả id đơn lẫn userId (quyền sở hữu nằm trong truy vấn)', async () => {
+    const { service, prisma } = makeService();
+    prisma.order.findFirst.mockResolvedValue(storedOrder());
+
+    await service.findOneForUser(USER, 'order-1');
+
+    const args = prisma.order.findFirst.mock.calls[0][0];
+    expect(args.where).toEqual({ id: 'order-1', userId: USER });
+    expect(args.include).toHaveProperty('items');
+  });
+
+  it('đơn của người khác: truy vấn kèm userId của người gọi nên không có kết quả, trả 404', async () => {
+    const { service, prisma } = makeService();
+    // DB thật chỉ trả null vì where có userId của OTHER_USER không khớp chủ đơn.
+    prisma.order.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.findOneForUser(OTHER_USER, 'order-1'),
+    ).rejects.toThrow(NotFoundException);
+
+    const args = prisma.order.findFirst.mock.calls[0][0];
+    expect(args.where.userId).toBe(OTHER_USER);
+  });
+
+  it('đơn không tồn tại thì 404', async () => {
+    const { service, prisma } = makeService();
+    prisma.order.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.findOneForUser(USER, 'khong-co'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('không lộ thông tin: lỗi 404 có cùng thông báo cho đơn lạ và đơn của người khác', async () => {
+    const { service, prisma } = makeService();
+    prisma.order.findFirst.mockResolvedValue(null);
+
+    const err1 = await service
+      .findOneForUser(USER, 'khong-co')
+      .catch((e: NotFoundException) => e);
+    const err2 = await service
+      .findOneForUser(OTHER_USER, 'order-1')
+      .catch((e: NotFoundException) => e);
+
+    expect((err1 as NotFoundException).message).toBe(
+      (err2 as NotFoundException).message,
+    );
   });
 });
 

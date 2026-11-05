@@ -1,9 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import type { CartItem as CartItemType } from '@/types/brewlite';
 import CartItem from '@/components/CartItem';
+import CheckoutModal from '@/components/CheckoutModal';
 import { useCartStore } from '@/stores/cartStore';
+import { useRouter } from 'next/navigation';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('vi-VN', {
@@ -38,6 +41,7 @@ const sampleItems: CartItemType[] = [
 ];
 
 export default function CartPage() {
+  const router = useRouter();
   const items = useCartStore((state) => state.items);
   const addItem = useCartStore((state) => state.addItem);
   const removeItem = useCartStore((state) => state.removeItem);
@@ -45,6 +49,16 @@ export default function CartPage() {
   const clearCart = useCartStore((state) => state.clearCart);
   const totalQuantity = useCartStore((state) => state.getTotalQuantity());
   const totalAmount = useCartStore((state) => state.getTotalAmount());
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  const openCheckout = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('brewlite_token') : null;
+    if (!token) {
+      router.push('/login?redirect=/cart');
+      return;
+    }
+    setIsCheckoutOpen(true);
+  };
 
   const sampleControls = (
     <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-3">
@@ -121,13 +135,20 @@ export default function CartPage() {
         </div>
         <button
           type="button"
-          disabled
-          className="mt-4 w-full cursor-not-allowed rounded-lg bg-slate-300 px-4 py-3 text-sm font-bold text-slate-600"
-          title="Chức năng thanh toán sẽ được triển khai ở task tiếp theo"
+          onClick={openCheckout}
+          className="mt-4 w-full rounded-lg bg-amber-800 px-4 py-3 text-sm font-bold text-white hover:bg-amber-900"
         >
-          Thanh toán (sẽ triển khai sau)
+          Thanh toán
         </button>
       </div>
+
+      {isCheckoutOpen && (
+        <CheckoutModal
+          items={items}
+          totalAmount={totalAmount}
+          onClose={() => setIsCheckoutOpen(false)}
+        />
+      )}
     </section>
   );
 }
