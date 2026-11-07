@@ -1,8 +1,10 @@
 # Hướng dẫn cấu hình và chạy thử VNPay Sandbox — BrewLite
 
-Cập nhật: 06/11/2026. Hướng dẫn này áp dụng cho code hiện tại trong repository, chạy bằng PowerShell trên Windows. Backend dùng NestJS + Prisma; frontend dùng Next.js; PostgreSQL chạy qua Docker.
+Cập nhật và đối chiếu code: 07/11/2026. Hướng dẫn này áp dụng cho code hiện tại trên nhánh `VNPay`, chạy bằng PowerShell trên Windows. Backend dùng NestJS + Prisma; frontend dùng Next.js; PostgreSQL chạy qua Docker. SDK và FE đang cấu hình cho sandbox; đây chưa phải hướng dẫn đưa thanh toán lên production.
 
 Các giá trị `BACKEND-TUNNEL`, `FRONTEND-TUNNEL`, `TMN_CODE_CUA_BAN` và `HASH_SECRET_CUA_BAN` bên dưới là chỗ cần thay, không phải thông tin có thể dùng nguyên mẫu.
+
+Đường dẫn project trong các lệnh là `D:\Software_engine\SWE_Project`. Người nhận bàn giao cần thay bằng thư mục clone của mình. File `.env` thật không nằm trong Git, vì vậy sau khi clone cần tự cấu hình từ file mẫu.
 
 ## 1. Chọn cách chạy
 
@@ -17,14 +19,35 @@ Luồng thanh toán hiện tại:
 2. FE gọi `POST /payments/vnpay/create`, kèm JWT và `Idempotency-Key`.
 3. BE trả `paymentUrl`; FE chuyển trình duyệt tới URL này.
 4. VNPay gửi thông báo IPN tới BE để ghi nhận kết quả thanh toán.
-5. VNPay đưa trình duyệt về endpoint return của BE; BE chuyển tiếp tới trang đơn hàng của FE.
+5. VNPay đưa trình duyệt về endpoint return của BE; BE chuyển tiếp tới trang đơn hàng của FE. IPN và return có thể tới khác thứ tự; return không cập nhật DB trong code hiện tại.
 6. FE đọc trạng thái đơn từ BE. Việc trình duyệt quay về không tự chứng minh đơn đã được thanh toán.
 
 FE đã có phần kết nối VNPay trong `components/CheckoutModal.tsx`, `components/ResumeVnpayPayment.tsx` và `utils/startVnpayPayment.ts`; không cần tự ghép URL thanh toán trên FE.
 
 ## 2. Chuẩn bị thông tin merchant
 
-Đăng ký merchant sandbox theo hướng dẫn VNPay và lấy thông tin được cấp:
+### 2.1. Tạo tài khoản VNPay Sandbox
+
+Nếu đã có tài khoản merchant sandbox và thông tin kết nối thì bỏ qua phần đăng ký, dùng lại thông tin được cấp.
+
+1. Mở trang [đăng ký merchant TEST của VNPay](http://sandbox.vnpayment.vn/devreg/).
+2. Điền form đăng ký:
+
+   | Trường trên form | Cách điền |
+   | --- | --- |
+   | Tên website | Tên ứng dụng, ví dụ `BrewLite` |
+   | Địa chỉ URL | URL website có đầy đủ giao thức, ví dụ `https://FRONTEND-TUNNEL.trycloudflare.com`. Nếu chưa có domain và form không nhận localhost, cài `cloudflared` theo mục 2.2 rồi mở tunnel FE theo mục 4 để lấy URL |
+   | Email đăng ký | Email bạn truy cập được để nhận thông tin đăng ký/kết nối |
+   | Mật khẩu | Mật khẩu riêng cho tài khoản quản lý merchant sandbox |
+   | Nhập lại mật khẩu | Nhập giống mật khẩu vừa đặt |
+   | Mã xác nhận | Nhập mã đang hiển thị trên form rồi bấm **Đăng ký** |
+
+3. Kiểm tra email, kể cả thư rác, và thực hiện yêu cầu xác nhận nếu VNPay hướng dẫn.
+4. Lưu thông tin kết nối VNPay cấp, sau đó cấu hình BE ở mục 5 và IPN trên merchant ở mục 7.
+
+URL website trong form không phải endpoint IPN hoặc return. Chỉ đăng ký xong chưa làm BE nhận được thông báo thanh toán: vẫn cần cấu hình IPN riêng.
+
+Thông tin cần có sau khi đăng ký:
 
 - **TmnCode / Terminal Code:** mã merchant.
 - **Hash Secret / Secure Secret:** khóa ký dữ liệu VNPay.
@@ -33,6 +56,39 @@ FE đã có phần kết nối VNPay trong `components/CheckoutModal.tsx`, `comp
 `VNPAY_HASH_SECRET` phải là secret VNPay cấp. Mật khẩu đăng nhập merchant, `JWT_SECRET` và khóa Windows là những thông tin khác nhau.
 
 Code hiện tại đọc secret từ biến môi trường `VNPAY_HASH_SECRET`. Chưa có chức năng tự đọc Windows Credential Manager hoặc tự giải mã file secret trong một thư mục.
+
+### 2.2. Tải và cấu hình cloudflared trên Windows
+
+Công cụ cần dùng là **`cloudflared` để mở Cloudflare Tunnel**. Máy hiện tại đã có `D:\Software_engine\Tools\cloudflared.exe`, nên có thể bỏ qua tải lại và dùng trực tiếp đường dẫn này.
+
+Nếu cài trên máy mới:
+
+1. Mở [trang tải cloudflared chính thức — mục Windows](https://developers.cloudflare.com/tunnel/downloads/#windows).
+2. Chọn **Executable** đúng kiến trúc Windows. Với máy Windows Intel/AMD 64-bit thông thường, chọn bản **64-bit**; nếu dùng kiến trúc khác, chọn bản tương ứng từ các release Cloudflare cung cấp.
+3. Tạo thư mục để lưu công cụ, ví dụ `D:\Software_engine\Tools`, rồi đặt file EXE tải về vào đó.
+4. Đổi tên file thành `cloudflared.exe` cho dễ gọi. Bật hiển thị phần mở rộng file trong Explorer để tránh đặt thành `cloudflared.exe.exe`.
+5. Mở PowerShell, kiểm tra:
+
+   ```powershell
+   & 'D:\Software_engine\Tools\cloudflared.exe' --version
+   ```
+
+Nếu lệnh hiện phiên bản thì đã có thể dùng ngay các lệnh tunnel ở mục 4; không bắt buộc thêm PATH. Cách tải Executable này không yêu cầu chạy thêm trình cài MSI.
+
+**Tùy chọn: cấu hình PATH để gõ ngắn `cloudflared`**
+
+- Chỉ trong phiên PowerShell hiện tại:
+
+  ```powershell
+  $env:Path += ';D:\Software_engine\Tools'
+  cloudflared --version
+  ```
+
+- Dùng cho các phiên sau: mở Windows Search → **Edit environment variables for your account** → trong **User variables**, chọn **Path** → **Edit** → **New** → thêm `D:\Software_engine\Tools` → **OK**. Thêm thư mục chứa EXE, không thêm chính đường dẫn file `.exe`. Đóng và mở lại PowerShell; nếu dùng terminal tích hợp, mở lại VS Code/Windows Terminal khi chưa nhận PATH mới.
+
+Không cần tạo tài khoản Cloudflare hoặc đăng ký domain để chạy Quick Tunnel trong hướng dẫn này. Sau khi tải xong, mở tunnel BE/FE theo mục 4, lấy URL rồi điền vào các file cấu hình ở mục 5–6 và merchant ở mục 7. Các bước mở tunnel và điền URL đã có bên dưới, không cần thiết lập thêm service Windows hoặc named tunnel cho buổi test này. Xem [hướng dẫn Quick Tunnels chính thức](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+### 2.3. Kiểm tra công cụ trước khi tiếp tục
 
 Kiểm tra công cụ đã cài:
 
@@ -44,6 +100,14 @@ cloudflared --version
 ```
 
 Nếu PowerShell chưa nhận `cloudflared`, cài hoặc thêm công cụ vào PATH theo tài liệu Cloudflare, rồi mở PowerShell mới.
+
+Trên máy hiện tại đã có file `D:\Software_engine\Tools\cloudflared.exe`. Có thể kiểm tra mà không cần chỉnh PATH:
+
+```powershell
+& 'D:\Software_engine\Tools\cloudflared.exe' --version
+```
+
+Nếu bàn giao sang máy khác, thay đường dẫn này bằng nơi cài `cloudflared` của máy đó; không cần copy file EXE vào repository.
 
 ## 3. Mở PostgreSQL và chuẩn bị dependency
 
@@ -82,6 +146,12 @@ Set-Location 'D:\Software_engine\SWE_Project'
 cloudflared tunnel --url http://localhost:8080
 ```
 
+Nếu báo `cloudflared is not recognized`, dùng đường dẫn đã xác định trên máy hiện tại:
+
+```powershell
+& 'D:\Software_engine\Tools\cloudflared.exe' tunnel --url http://localhost:8080
+```
+
 Ghi lại URL HTTPS được in ra, ví dụ:
 
 ```text
@@ -94,6 +164,14 @@ https://BACKEND-TUNNEL.trycloudflare.com
 Set-Location 'D:\Software_engine\SWE_Project'
 cloudflared tunnel --url http://localhost:3000
 ```
+
+Nếu chưa có PATH, dùng:
+
+```powershell
+& 'D:\Software_engine\Tools\cloudflared.exe' tunnel --url http://localhost:3000
+```
+
+Với mỗi tunnel, chỉ chọn **một** trong hai cách gọi, không chạy cả hai cách cho cùng cổng.
 
 Ghi lại URL HTTPS được in ra, ví dụ:
 
@@ -189,17 +267,30 @@ Lưu file và khởi động lại frontend sau khi đổi các biến này. V�
 
 5. Bấm **Cập nhật** và kiểm tra URL đã lưu.
 
+**Phải có đủ `/payments/vnpay/ipn`.** Đường dẫn `/vnpay/ipn` không được khai báo trong BE và trả 404. Đây là lỗi cấu hình đã gặp thực tế: khách thanh toán xong quay về FE được nhưng order vẫn `PENDING`, vì return đúng còn IPN sai. Chỉ đổi `.env` không sửa được URL đang lưu trên merchant.
+
 Không dùng tunnel FE hoặc `localhost` làm IPN URL. VNPay phải gọi được endpoint BE từ bên ngoài máy bạn. Vai trò IPN và return được mô tả trong [tài liệu tích hợp VNPay](https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html).
 
 ## 8. Đồng bộ Prisma và mở ứng dụng
 
 Khi mới lấy code hoặc có migration mới, chạy trong backend khi DB đã sẵn sàng:
 
+**Kiểm tra trước nếu DB đã sử dụng nhánh khác:** nhánh này có chỉnh hai migration lịch sử `20261102193258_init_payment_voucher` và `20261103071149_finalize_payment_voucher_schema`. Nếu DB đã áp dụng nội dung cũ, cần đối chiếu lịch sử migration và schema thực tế trước khi tiếp tục. Có thể xem trạng thái bằng `npx prisma migrate status`, nhưng lệnh này không thay thế việc so sánh schema và nội dung SQL. Nếu Prisma báo lịch sử không khớp hoặc migration thất bại, dừng và kiểm tra cùng người quản lý DB; không dùng reset để xử lý DB cần giữ dữ liệu. Các lệnh ở đây dành cho DB local của project.
+
 ```powershell
 Set-Location 'D:\Software_engine\SWE_Project\backend'
 npm run prisma:generate
 npx prisma migrate deploy
 ```
+
+Với **DB local mới chưa có menu**, sau khi migrate thành công có thể nạp dữ liệu mẫu:
+
+```powershell
+Set-Location 'D:\Software_engine\SWE_Project\backend'
+npm run prisma:seed
+```
+
+Seed hiện dùng `upsert`, có cập nhật lại giá/tồn kho sản phẩm mẫu, voucher và mật khẩu tài khoản mẫu. Không chạy seed như bước bắt buộc mỗi lần mở ứng dụng hoặc trên DB đang giữ dữ liệu test cần bảo toàn. Có thể đăng ký tài khoản riêng qua `/auth/register` để kiểm thử.
 
 Nếu project đã đồng bộ schema thì không cần lặp lại các lệnh Prisma mỗi lần test. Nếu generate báo lỗi `EPERM` với `query_engine-windows.dll.node`, dừng backend đang sử dụng Prisma bằng `Ctrl + C`, chạy lại generate, rồi mở backend lại. Không cần dừng tunnel chỉ để generate Prisma.
 
@@ -248,6 +339,8 @@ Code hiện tại trả:
 
 Kết quả này chỉ cho biết endpoint có phản hồi và đang từ chối request thiếu tham số. Đây không phải xác nhận một giao dịch đã được xử lý đúng. Endpoint return khi mở trống cũng có thể báo 400 vì thiếu query/chữ ký.
 
+Nếu URL IPN trả **404**, sửa đường dẫn trước khi thanh toán thử. Khi nhận IPN hợp lệ, code trả `RspCode: "00"` sau xử lý thành công, hoặc `"02"` nếu payment đã xác nhận trước đó. Vẫn phải đối chiếu trạng thái order/payment: code cũng có thể ghi nhận trường hợp cần hoàn tiền với `REFUND_REQUIRED`.
+
 ## 10. Test bằng Swagger
 
 1. Đăng ký hoặc đăng nhập tài khoản bằng các API `/auth` hiện có.
@@ -295,6 +388,10 @@ Gửi lại cùng `Idempotency-Key` để kiểm tra phản hồi của cùng l�
 5. FE phải chuyển sang trang `sandbox.vnpayment.vn`.
 6. Hoàn tất thanh toán sandbox. Sau return, kiểm tra trang đơn hàng và trạng thái `PAID`.
 
+Trên chi tiết đơn chưa thanh toán, bộ đếm **phút:giây** dùng `paymentExpiresAt` từ API. Tải lại trang không cấp thêm 10 phút. Trong phút cuối đồng hồ chuyển đỏ; khi về `00:00`, FE khóa nút tiếp tục thanh toán và gọi lại API đơn để lấy trạng thái do BE quyết định. Đơn đã thanh toán hoặc đã hủy không hiển thị bộ đếm.
+
+Nếu return tới trước IPN, FE tự đọc lại đơn mỗi 3 giây, tối đa 10 lượt sau lần tải đầu. Hết khoảng chờ này mà vẫn `PENDING`, cần kiểm tra IPN và dùng nút **Kiểm tra trạng thái**; không coi việc trang vẫn chờ là bằng chứng thanh toán thất bại.
+
 Để kiểm tra nối FE–BE bằng DevTools, mở **Network**, bấm thanh toán và tìm:
 
 | Request | Kết quả cần thấy |
@@ -321,7 +418,9 @@ Vào **Đơn hàng → chọn đơn đang chờ → Tiếp tục thanh toán**.
 - Nếu thông báo xác nhận thu tiền về sau khi đơn bị hủy hoặc sau hạn: giữ đơn `CANCELLED`, ghi nhận payment `SUCCESS` với `REFUND_REQUIRED` để xử lý hoàn tiền. Không tự coi là đã hoàn tiền, không trừ kho hoặc cộng điểm cho đơn hủy.
 - Đơn đã xác nhận thu tiền không bị tác vụ hết hạn hủy lại. Quy tắc áp dụng cả các đơn đang chờ cũ khi BE chạy bản code mới. BE cần chạy để thực hiện tác vụ nền; khi khởi động lại sẽ quét các đơn quá hạn.
 
-Trong lần kiểm tra ngày 06/11/2026, API tra cứu sandbox đã trả `99 — Unexpected error`, không có chữ ký, cả với một giao dịch đã thanh toán và một giao dịch chờ. Đây là ghi nhận tại thời điểm test, không phải kết luận mọi tài khoản sandbox đều bị lỗi hoặc merchant chắc chắn chưa có quyền.
+Trong lần kiểm tra ngày 06/11/2026, API tra cứu sandbox đã trả `99 — Unexpected error`, không có chữ ký, cả với một giao dịch đã thanh toán và một giao dịch chờ. Đây là ghi nhận tại thời điểm test, không phải kết luận mọi tài khoản sandbox đều bị lỗi hoặc merchant chắc chắn chưa có quyền. Ngày 07/11 đã tìm thấy cấu hình merchant dùng nhầm `/vnpay/ipn` thay vì `/payments/vnpay/ipn`; sau đó các đơn mới đã ghi nhận `PAID` trong DB. Hai vấn đề khác nhau: querydr lỗi không chứng minh luồng tạo URL/IPN đều hỏng.
+
+Hiện tại API đối soát chỉ truy vấn payment đang chờ của đơn `PENDING`/`PAYMENT_FAILED`. Sau khi đơn đã `CANCELLED`, nút kiểm tra không tự phục hồi đơn hoặc tự hoàn tiền. Với đơn hủy nhưng khách đã trả tiền, cần nhận lại IPN hợp lệ hoặc xử lý đối soát qua merchant/VNPay; chức năng hoàn tiền tự động chưa được triển khai.
 
 Nếu tiếp tục gặp lỗi này: tra giao dịch trên trang merchant, rồi phản hồi email hỗ trợ VNPay với TmnCode, mã giao dịch, thời điểm gọi và thông báo lỗi. Không gửi Hash Secret. [Tài liệu querydr của VNPay](https://sandbox.vnpayment.vn/apis/docs/truy-van-hoan-tien/querydr%26refund.html) phân biệt mã truy vấn với trạng thái thanh toán; querydr trả `00` chưa đủ để kết luận đã thu tiền.
 
@@ -330,12 +429,13 @@ Nếu tiếp tục gặp lỗi này: tra giao dịch trên trang merchant, rồi
 | Hiện tượng | Kiểm tra/cách xử lý |
 | --- | --- |
 | `Failed to fetch` khi tải menu hoặc thanh toán | BE có chạy cổng 8080 không; `NEXT_PUBLIC_API_URL` có trỏ đúng BE không; CORS có cho phép origin FE hiện tại không; có đang dùng HTTPS FE gọi HTTP localhost không |
+| `cloudflared is not recognized` trong PowerShell | Dùng `& 'D:\Software_engine\Tools\cloudflared.exe' tunnel --url http://localhost:8080` trên máy hiện tại, hoặc thêm thư mục cài vào PATH rồi mở terminal mới |
 | HTTP 401 trên API tạo thanh toán | Đăng nhập FE để FE tự gửi JWT; kiểm tra token hết hạn hoặc BE vừa đổi `JWT_SECRET`. Token nhập ở Swagger không tự đăng nhập FE |
 | HTTP 400 khi tạo đơn | Kiểm tra UUID sản phẩm, size/topping hợp lệ, tồn kho và payload. Dùng món lấy từ API menu thật |
 | HTTP 409 ở API tạo thanh toán | Đọc `message` trong response: đơn đã thu tiền, URL hết hạn, giao dịch cần đối soát hoặc đã hết số lượt. Không tự sửa DB thành `PAID`/`FAILED` để bỏ chặn |
 | Cloudflare báo không tới được origin/502 | Kiểm tra ứng dụng local đã chạy, cổng tunnel khớp 8080 hoặc 3000; tunnel không thay thế tiến trình BE/FE |
 | Cloudflare FE báo `Unauthorized` ở `/_next/hmr` | Cập nhật `DEV_TUNNEL_HOST` đúng hostname FE mới, khởi động lại FE và tải lại trang. Đây là kết nối dev HMR, khác với lỗi JWT của API |
-| Thanh toán xong vẫn `PENDING` | Kiểm tra IPN đã lưu đúng trên merchant, tunnel BE còn hoạt động, log BE và trạng thái giao dịch merchant; bấm **Kiểm tra trạng thái** để yêu cầu đối soát |
+| Thanh toán xong vẫn `PENDING` | Kiểm tra IPN trên merchant có đủ `/payments/vnpay/ipn`, tunnel BE còn hoạt động và log BE. Return đúng không có nghĩa IPN đúng. Đơn còn chờ có thể dùng **Kiểm tra trạng thái** để yêu cầu đối soát; không thanh toán lại đơn đã trả tiền |
 | `Không xác minh được phản hồi VNPay` | Kiểm tra kết quả querydr và chữ ký. Trong phiên test nêu trên sandbox trả lỗi 99 không có chữ ký. Không đủ thông tin để coi giao dịch đã thất bại |
 | Prisma `P1001` | Mở Docker Desktop; xác nhận `brewlite-db` đang chạy và `DATABASE_URL` đúng |
 | Prisma generate báo `EPERM` với DLL | Dừng BE đang giữ Prisma engine rồi generate lại; mở BE lại sau đó |
@@ -378,18 +478,23 @@ Khởi động lại các ứng dụng. Giữ tunnel BE nếu cần nhận IPN v
 
 ## 15. Chạy các kiểm tra liên quan
 
-Unit test backend VNPay:
+Toàn bộ unit test backend, gồm cả tác vụ hết hạn đơn:
 
 ```powershell
 Set-Location 'D:\Software_engine\SWE_Project\backend'
-npm test -- --runInBand vnpay
+npm test -- --runInBand
+npm run build
 ```
+
+Nếu chỉ muốn chạy nhóm kiểm thử gateway VNPay, dùng `npm test -- --runInBand vnpay`. Lệnh lọc này không chạy các test có tên `order-payment-window` và `order-expiration`.
 
 Kiểm tra logic gọi thanh toán FE:
 
 ```powershell
 Set-Location 'D:\Software_engine\SWE_Project\frontend'
 node --test tests/vnpay-payment.test.mjs
+npx tsc --noEmit --incremental false
+npm run build
 ```
 
 Các test này kiểm tra logic bằng mock, không thay thế việc thanh toán thử trên cổng VNPay và xác nhận IPN thực tế.
@@ -400,12 +505,17 @@ Các test này kiểm tra logic bằng mock, không thay thế việc thanh toá
 - [ ] BE và FE chạy đúng cổng; không mở trùng hai BE hoặc hai FE trên cùng cổng.
 - [ ] TmnCode và Hash Secret là thông tin sandbox được cấp.
 - [ ] Tunnel BE đang hoạt động, URL khớp return và IPN đã lưu trên merchant.
+- [ ] IPN dùng chính xác `/payments/vnpay/ipn`, truy cập trống trả 97 chứ không phải 404.
 - [ ] FE dùng đúng API URL cho localhost hoặc truy cập công khai.
 - [ ] CORS cho phép đúng origin FE.
 - [ ] Đã khởi động lại ứng dụng sau khi đổi biến môi trường.
 - [ ] Đăng nhập đúng tài khoản sở hữu đơn.
 - [ ] Kiểm tra đúng mã đơn; phân biệt đơn mới với đơn cũ hết hạn.
 - [ ] Sau thanh toán kiểm tra trạng thái từ BE/DB, không chỉ nhìn trang return.
+- [ ] Luồng thành công: order `PAID`, payment `SUCCESS`, có mã giao dịch VNPay.
+- [ ] Bộ đếm giữ đúng hạn sau tải lại; đơn chưa xác nhận tiền quá 10 phút chuyển `CANCELLED`.
+- [ ] Đơn `PAID` không bị hủy sau 10 phút; IPN lặp không trừ kho/cộng điểm lần nữa.
+- [ ] Khi bàn giao, ghi rõ querydr lỗi từng gặp và hoàn tiền tự động chưa có.
 
 ## Tài liệu đối chiếu
 
@@ -413,4 +523,6 @@ Các test này kiểm tra logic bằng mock, không thay thế việc thanh toá
 - [VNPay: API querydr/refund](https://sandbox.vnpayment.vn/apis/docs/truy-van-hoan-tien/querydr%26refund.html).
 - [VNPay: bảng mã lỗi](https://sandbox.vnpayment.vn/apis/docs/bang-ma-loi/).
 - [Cloudflare: Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+- [VNPay: đăng ký merchant TEST](http://sandbox.vnpayment.vn/devreg/).
+- [Cloudflare: tải cloudflared cho Windows](https://developers.cloudflare.com/tunnel/downloads/#windows).
 - Cấu hình dự án: `backend/src/payments/vnpay.service.ts`, `backend/src/payments/vnpay-checkout.service.ts`, `backend/src/payments/vnpay-reconciliation.service.ts`, `backend/src/payments/vnpay-callback.service.ts`, `backend/src/main.ts`, `frontend/next.config.ts`, `frontend/utils/startVnpayPayment.ts`, `frontend/components/CheckoutModal.tsx` và `docker-compose.yml`.
