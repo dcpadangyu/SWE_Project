@@ -14,12 +14,20 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 /**
  * Tùy chọn cấu hình khi gửi request
  */
 interface RequestOptions extends RequestInit {
   data?: unknown; // Dữ liệu payload gửi kèm nếu là POST/PUT/PATCH
   token?: string; // Token xác thực nếu muốn truyền trực tiếp
+  handledError?: boolean;
 }
 
 /**
@@ -33,7 +41,7 @@ export async function apiRequest<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { data, token, headers, ...customConfig } = options;
+  const { data, token, headers, handledError = false, ...customConfig } = options;
 
   // 1. Tự động lấy JWT token đã lưu trong trình duyệt nếu không truyền vào
   let authToken = token;
@@ -76,14 +84,16 @@ export async function apiRequest<T>(
       const errorBody = await response.json().catch(() => ({}));
       const errorMessage =
         errorBody.message || `Lỗi API (${response.status}): ${response.statusText}`;
-      throw new Error(errorMessage);
+      throw new ApiError(errorMessage, response.status);
     }
 
     // Đọc và trả về dữ liệu JSON
     return (await response.json()) as T;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[API Error] Thất bại khi gọi ${fullUrl}:`, message);
+    if (!handledError) {
+      console.error(`[API Error] Thất bại khi gọi ${fullUrl}:`, message);
+    }
     throw error;
   }
 }

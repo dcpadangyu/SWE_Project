@@ -1,13 +1,18 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import type {
-  CartItem,
-  PaymentMethod,
-} from '@/types/brewlite';
-import { apiClient } from '@/utils/apiClient';
-import { useCartStore } from '@/stores/cartStore';
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { CartItem } from "@/types/brewlite";
+import { apiClient } from "@/utils/apiClient";
+import { startVnpayPayment } from "@/utils/startVnpayPayment";
+
+import { authStorage } from "@/utils/authStorage";
+
+import {
+  readPendingCheckout,
+  savePendingCheckout,
+  removePendingCheckout,
+} from "@/utils/vnpayCheckout";
 
 type CheckoutModalProps = {
   items: CartItem[];
@@ -19,12 +24,8 @@ type CreateOrderResponse = {
   orderId: string;
 };
 
-type PaymentResponse = {
-  status?: string;
-  payment?: {
-    status?: string;
-    transactionCode?: string | null;
-  };
+type OrderStatusResponse = {
+  status: string;
 };
 
 type QuoteResponse = {
@@ -50,9 +51,9 @@ type ApplyVoucherResponse = {
 };
 
 const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: 'VND',
+  new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
     maximumFractionDigits: 0,
   }).format(amount);
 
@@ -66,11 +67,9 @@ export default function CheckoutModal({
   onClose,
 }: CheckoutModalProps) {
   const router = useRouter();
-  const clearCart = useCartStore((state) => state.clearCart);
-  const [voucherCode, setVoucherCode] = useState('');
-  const [paymentMethod, setPaymentMethod] =
-    useState<PaymentMethod>('E_WALLET');
-  const [note, setNote] = useState('');
+  const submittingRef = useRef(false);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [note, setNote] = useState("");
   const [quote, setQuote] = useState<QuoteResponse>({
     subtotal: totalAmount,
     discountAmount: 0,
@@ -91,7 +90,7 @@ export default function CheckoutModal({
     setIsApplyingVoucher(true);
     try {
       const response = await apiClient.post<ApplyVoucherResponse>(
-        '/promotions/apply',
+        "/promotions/apply",
         {
           code,
           orderValue: totalAmount,
@@ -116,7 +115,7 @@ export default function CheckoutModal({
       setError(
         applyError instanceof Error
           ? applyError.message
-          : 'Không thể áp dụng mã giảm giá này.',
+          : "Không thể áp dụng mã giảm giá này.",
       );
     } finally {
       setIsApplyingVoucher(false);
@@ -125,54 +124,142 @@ export default function CheckoutModal({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (submittingRef.current) return;
+
+    submittingRef.current = true;
     setError(null);
     setIsSubmitting(true);
 
     try {
-      const checkoutKey = createIdempotencyKey();
+      const user = authStorage.getUser() as {
+        id?: string;
+      } | null;
 
-      // Payload tạo đơn PENDING tuân thủ chuẩn CreateOrderDto của Backend
+      if (!authStorage.getToken() || !user?.id) {
+        router.push("/login?redirect=/cart");
+        return;
+      }
+
+      if (items.length === 0) {
+        throw new Error("Giỏ hàng đang trống.");
+      }
+
       const orderPayload = {
         items: items.map((item) => ({
           productId: item.productId,
           size: item.size,
-          toppingIds: item.selectedToppings.map((topping) => topping.id),
+          toppingIds: item.selectedToppings.map((topping) => topping.id).sort(),
           quantity: item.quantity,
         })),
         note: note.trim() || undefined,
         voucherCode: quote.voucherCode || undefined,
       };
 
-      const order = await apiClient.post<CreateOrderResponse>(
-        '/orders',
-        orderPayload,
-        { headers: { 'Idempotency-Key': checkoutKey } },
-      );
+      const fingerprint = JSON.stringify(orderPayload);
 
-      const payment = await apiClient.post<PaymentResponse>(
-        '/payments',
-        { orderId: order.orderId, paymentMethod },
-        { headers: { 'Idempotency-Key': createIdempotencyKey() } },
-      );
+      let pending = readPendingCheckout(user.id);
 
-      const isSuccess =
-        payment?.status === 'SUCCESS' ||
-        payment?.status === 'PAID' ||
-        payment?.payment?.status === 'SUCCESS';
-
-      if (!isSuccess) {
-        throw new Error('Thanh toán thất bại. Giỏ hàng được giữ nguyên để thử lại.');
+      // Đơn cũ đã đóng không được giữ chân một giỏ hàng mới.
+      if (pending?.orderId && pending.fingerprint !== fingerprint) {
+        const previousOrder = await apiClient.get<OrderStatusResponse>(
+          `/orders/${encodeURIComponent(pending.orderId)}`,
+        );
+        if (["PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED"].includes(previousOrder.status)) {
+          removePendingCheckout(user.id);
+          pending = null;
+        }
       }
 
-      clearCart();
-      router.push(`/orders/${order.orderId}`);
+      // Không tạo đơn mới nếu lượt cũ chưa được xử lý.
+      if (pending && pending.fingerprint !== fingerprint) {
+        if (pending.orderId) {
+          router.push(`/orders/${encodeURIComponent(pending.orderId)}`);
+          return;
+        }
+
+        throw new Error(
+          "Có yêu cầu tạo đơn chưa rõ kết quả. Giữ nguyên giỏ hàng, ghi chú và voucher để gửi lại yêu cầu.",
+        );
+      }
+
+      if (!pending) {
+        pending = {
+          userId: user.id,
+          fingerprint,
+          checkoutKey: createIdempotencyKey(),
+          paymentKey: createIdempotencyKey(),
+          cartSnapshot: JSON.stringify(items),
+        };
+
+        // Lưu trước request để có thể gửi lại khi mạng lỗi.
+        savePendingCheckout(pending);
+      }
+
+      if (pending.orderId) {
+        const currentOrder = await apiClient.get<OrderStatusResponse>(
+          `/orders/${encodeURIComponent(pending.orderId)}`,
+        );
+
+        const paidStatuses = ["PAID", "PREPARING", "READY", "COMPLETED"];
+
+        if (paidStatuses.includes(currentOrder.status)) {
+          router.push(`/orders/${encodeURIComponent(pending.orderId)}`);
+          return;
+        }
+
+        if (currentOrder.status === "CANCELLED") {
+          removePendingCheckout(user.id);
+
+          router.push(`/orders/${encodeURIComponent(pending.orderId)}`);
+          return;
+        }
+
+        if (currentOrder.status === "PAYMENT_FAILED") {
+          // Khách chủ động thử lại sau thất bại đã xác nhận.
+          pending.paymentKey = createIdempotencyKey();
+          savePendingCheckout(pending);
+        }
+      }
+
+      if (!pending.orderId) {
+        const order = await apiClient.post<CreateOrderResponse>(
+          "/orders",
+          orderPayload,
+          {
+            headers: {
+              "Idempotency-Key": pending.checkoutKey,
+            },
+          },
+        );
+
+        pending.orderId = order.orderId;
+        savePendingCheckout(pending);
+      }
+
+      const checkout = pending;
+      const destination = await startVnpayPayment(
+        checkout.orderId!, checkout.paymentKey,
+        (key) => {
+          checkout.paymentKey = key;
+          savePendingCheckout(checkout);
+        },
+      );
+      if (destination.kind === "order") {
+        router.push(`/orders/${encodeURIComponent(destination.orderId)}`);
+        return;
+      }
+
+      // Chưa xóa giỏ, chưa coi là thanh toán thành công.
+      window.location.assign(destination.url);
     } catch (submitError: unknown) {
       setError(
         submitError instanceof Error
           ? submitError.message
-          : 'Không thể tạo đơn hàng. Vui lòng thử lại.',
+          : "Không thể mở thanh toán VNPay.",
       );
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -187,7 +274,10 @@ export default function CheckoutModal({
       <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:max-w-lg sm:rounded-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 id="checkout-title" className="text-xl font-black text-slate-900">
+            <h2
+              id="checkout-title"
+              className="text-xl font-black text-slate-900"
+            >
               Thanh toán
             </h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -219,7 +309,11 @@ export default function CheckoutModal({
                 value={voucherCode}
                 onChange={(event) => {
                   setVoucherCode(event.target.value);
-                  setQuote({ subtotal: totalAmount, discountAmount: 0, totalAmount });
+                  setQuote({
+                    subtotal: totalAmount,
+                    discountAmount: 0,
+                    totalAmount,
+                  });
                 }}
                 placeholder="Ví dụ: WELCOME10, BREW20K, FREESHIP"
                 className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
@@ -230,41 +324,21 @@ export default function CheckoutModal({
                 disabled={isApplyingVoucher}
                 className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-bold text-white hover:bg-amber-800 disabled:bg-slate-400"
               >
-                {isApplyingVoucher ? '...' : 'Áp dụng'}
+                {isApplyingVoucher ? "..." : "Áp dụng"}
               </button>
             </div>
           </div>
 
-          <fieldset>
-            <legend className="mb-2 text-sm font-semibold text-slate-700">
-              Phương thức thanh toán
-            </legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {([
-                ['E_WALLET', 'Ví điện tử'],
-                ['BANK_CARD', 'Thẻ ngân hàng'],
-              ] as const).map(([value, label]) => (
-                <label
-                  key={value}
-                  className={`cursor-pointer rounded-lg border p-3 text-sm ${
-                    paymentMethod === value
-                      ? 'border-amber-600 bg-amber-50 text-amber-900'
-                      : 'border-slate-200 text-slate-700'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="payment-method"
-                    value={value}
-                    checked={paymentMethod === value}
-                    onChange={() => setPaymentMethod(value)}
-                    className="mr-2 accent-amber-700"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-semibold text-amber-900">
+              Thanh toán qua VNPay
+            </p>
+
+            <p className="mt-1 text-xs text-amber-800">
+              Bạn sẽ được chuyển đến VNPay để chọn phương thức và xác nhận thanh
+              toán.
+            </p>
+          </div>
 
           <div>
             <label
@@ -296,8 +370,13 @@ export default function CheckoutModal({
           <div className="space-y-2 border-t border-slate-100 pt-4 text-sm">
             <p className="font-bold text-slate-800">Món đã chọn</p>
             {items.map((item) => (
-              <div key={item.id} className="flex justify-between gap-3 text-slate-600">
-                <span>{item.productName} × {item.quantity}</span>
+              <div
+                key={item.id}
+                className="flex justify-between gap-3 text-slate-600"
+              >
+                <span>
+                  {item.productName} × {item.quantity}
+                </span>
                 <span>{formatCurrency(item.subtotal)}</span>
               </div>
             ))}
@@ -306,12 +385,16 @@ export default function CheckoutModal({
               <span>{formatCurrency(quote.subtotal)}</span>
             </div>
             <div className="flex justify-between text-emerald-700">
-              <span>Giảm giá{quote.voucherCode ? ` (${quote.voucherCode})` : ''}</span>
+              <span>
+                Giảm giá{quote.voucherCode ? ` (${quote.voucherCode})` : ""}
+              </span>
               <span>-{formatCurrency(quote.discountAmount)}</span>
             </div>
             <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-base font-black text-slate-900">
               <span>Số tiền cần thanh toán</span>
-              <span className="text-lg text-amber-900">{formatCurrency(quote.totalAmount)}</span>
+              <span className="text-lg text-amber-900">
+                {formatCurrency(quote.totalAmount)}
+              </span>
             </div>
           </div>
 
@@ -320,7 +403,7 @@ export default function CheckoutModal({
             disabled={isSubmitting}
             className="w-full rounded-lg bg-amber-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {isSubmitting ? 'Đang xử lý...' : 'Xác nhận thanh toán'}
+            {isSubmitting ? "Đang mở cổng thanh toán..." : "Tiếp tục với VNPay"}
           </button>
         </form>
       </div>

@@ -167,6 +167,7 @@ export interface Order {
   note?: string;          // Ghi chú của khách hàng (ít đường, nhiều đá...)
   checkoutKey?: string;   // Khóa Idempotency-Key chống trừ tiền hoặc tạo đơn 2 lần
   createdAt: string;      // Thời điểm đặt đơn
+  paymentExpiresAt?: string; // Hạn thanh toán do backend cung cấp
   updatedAt?: string;     // Thời điểm cập nhật đơn gần nhất
 }
 

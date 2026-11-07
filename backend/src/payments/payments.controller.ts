@@ -7,6 +7,7 @@ import {
   Post,
   Res,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -100,6 +101,12 @@ export class PaymentsController {
     @Body() dto: CreatePaymentDto,
     @Res({ passthrough: true }) res: Response,
   ) {
+    if (process.env.PAYMENT_PROVIDER === 'VNPAY') {
+      throw new ForbiddenException(
+        'Thanh toán mock đã bị tắt. Hãy sử dụng API VNPay.',
+      );
+    }
+
     const result = await this.paymentsService.processPayment(
       user.id,
       idempotencyKey,

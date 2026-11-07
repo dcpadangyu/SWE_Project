@@ -243,7 +243,7 @@ async function main() {
     const saltRounds = 10;
     const defaultPasswordHash = await bcrypt.hash('123456', saltRounds);
     await tx.user.upsert({
-      where: { email: ' ' },
+      where: { email: 'customer@gmail.com' },
       create: {
         email: 'customer@gmail.com',
         passwordHash: defaultPasswordHash,
