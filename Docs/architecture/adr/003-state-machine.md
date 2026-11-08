@@ -21,9 +21,9 @@ stateDiagram-v2
     [*] --> PENDING: Khách tạo đơn hàng
     PENDING --> PAID: Thanh toán thành công (200 OK)
     PENDING --> PAYMENT_FAILED: Cổng thanh toán báo lỗi (402)
-    PENDING --> CANCELLED: Khách hủy đơn / Quá hạn 15 phút
+    PENDING --> CANCELLED: Khách hủy đơn / Quá hạn 10 phút
     PAYMENT_FAILED --> PENDING: Khách bấm "Thử lại" (tối đa 3 lần)
-    PAYMENT_FAILED --> CANCELLED: Khách chọn hủy / Quá 3 lần thử
+    PAYMENT_FAILED --> CANCELLED: Khách chọn hủy / Hết hạn 10 phút / Quá 3 lần thử
     PAID --> PREPARING: Barista tiếp nhận pha chế
     PAID --> CANCELLED: Hủy đơn ngoại lệ (sự cố hết hàng / hoàn tiền)
     PREPARING --> READY: Hoàn tất pha chế, mời khách nhận nước
@@ -31,6 +31,8 @@ stateDiagram-v2
     COMPLETED --> [*]
     CANCELLED --> [*]
 ```
+
+Bổ sung cho VNPay ngày 08-11-2026: sơ đồ trên mô tả luồng thông thường. Ngoại lệ đối soát `CANCELLED -> PAID` chỉ được thực hiện trong callback VNPay theo các điều kiện tại mục 5; không được mở chuyển trạng thái này trong API cập nhật đơn thông thường.
 
 ## 4. Định nghĩa và ý nghĩa các trạng thái
 
@@ -47,7 +49,13 @@ stateDiagram-v2
 1. **Kiểm soát từ Backend:** Toàn bộ logic chuyển trạng thái phải do hàm nghiệp vụ của Backend (ví dụ `assertTransition(currentStatus, targetStatus)`) kiểm tra và thực thi. Tuyệt đối không cho phép Frontend gửi trực tiếp trường `status` lên để ghi đè.
 2. **Cơ chế Idempotency:** Mọi yêu cầu thanh toán đều phải kèm `Idempotency-Key` để tránh trường hợp mạng chập chờn gửi lặp làm chuyển trạng thái hoặc trừ tiền nhiều lần.
 3. **Bảo toàn giỏ hàng khi lỗi:** Khi đơn chuyển sang `PAYMENT_FAILED`, hệ thống không trừ tồn kho, không cộng điểm tích lũy, không hủy giỏ hàng trên giao diện và cho phép khách thử lại tối đa 3 lần.
-4. **Trạng thái bất biến (Immutable End-States):** Các đơn hàng đã ở trạng thái `COMPLETED` hoặc `CANCELLED` là trạng thái kết thúc, tuyệt đối không được phép chuyển sang bất kỳ trạng thái nào khác.
+4. **Trạng thái kết thúc:** `COMPLETED` luôn bất biến. `CANCELLED` đóng trong các thao tác thông thường; chỉ có ngoại lệ đối soát VNPay sau đây:
+   - Payment còn `PENDING`, có dấu `ORDER_PAYMENT_EXPIRED` do tác vụ tự hủy ghi lại dưới khóa của đơn.
+   - IPN hoặc querydr đã xác minh chữ ký, đúng merchant, mã giao dịch và số tiền; `vnp_PayDate` hợp lệ theo GMT+7 chứng minh đã thanh toán từ lúc tạo payment đến trước hạn URL và hạn 10 phút của đơn.
+   - Chưa có giao dịch khác ghi nhận tiền; tồn kho và voucher vẫn đáp ứng điều kiện giao hàng.
+   - Callback có thể xác nhận `PAID` dưới cùng transaction khóa đơn, trừ kho/cộng điểm đúng một lần. Đây là điều chỉnh kết quả do thông báo đến chậm, không phải mở lại đơn cho khách thanh toán mới.
+   - Đơn hủy vì lý do khác, giao dịch thanh toán thực sự quá hạn hoặc không còn khả năng giao hàng không được khôi phục: ghi nhận tiền với `REFUND_REQUIRED` để xử lý thủ công. Nếu thiếu thời điểm thanh toán thì không đủ căn cứ khôi phục đơn đã hủy.
+5. **Thời điểm thanh toán:** Hạn thanh toán vẫn là 10 phút từ lúc tạo đơn; thử lại không kéo dài hạn. Thời điểm BE nhận IPN có thể muộn hơn hạn, nên không dùng thời điểm nhận thông báo thay cho `vnp_PayDate` đã xác minh. Khi có thời gian VNPay hợp lệ, `payment.completedAt` lưu thời gian thanh toán thực tế.
 
 ## 6. Hệ quả
 

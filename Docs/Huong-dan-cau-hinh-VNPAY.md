@@ -1,6 +1,6 @@
 # Hướng dẫn cấu hình và chạy thử VNPay Sandbox — BrewLite
 
-Cập nhật và đối chiếu code: 07/11/2026. Hướng dẫn này áp dụng cho code hiện tại trên nhánh `VNPay`, chạy bằng PowerShell trên Windows. Backend dùng NestJS + Prisma; frontend dùng Next.js; PostgreSQL chạy qua Docker. SDK và FE đang cấu hình cho sandbox; đây chưa phải hướng dẫn đưa thanh toán lên production.
+Cập nhật và đối chiếu code: 08/11/2026. Hướng dẫn này áp dụng cho code hiện tại trên nhánh `VNPay`, chạy bằng PowerShell trên Windows. Backend dùng NestJS + Prisma; frontend dùng Next.js; PostgreSQL chạy qua Docker. File môi trường mẫu mặc định thanh toán Mock; các bước tích hợp VNPay bên dưới dành cho sandbox, chưa phải hướng dẫn đưa thanh toán lên production.
 
 Các giá trị `BACKEND-TUNNEL`, `FRONTEND-TUNNEL`, `TMN_CODE_CUA_BAN` và `HASH_SECRET_CUA_BAN` bên dưới là chỗ cần thay, không phải thông tin có thể dùng nguyên mẫu.
 
@@ -8,12 +8,36 @@ Các giá trị `BACKEND-TUNNEL`, `FRONTEND-TUNNEL`, `TMN_CODE_CUA_BAN` và `HAS
 
 ## 1. Chọn cách chạy
 
+### Chạy thử ngay bằng Mock (mặc định cho người mới)
+
+1. Tạo `backend/.env` từ `backend/.env.example` và `frontend/.env.local` từ `frontend/.env.example` nếu chưa có; không ghi đè file cấu hình đang sử dụng. Kiểm tra cấu hình DB/JWT/API URL, khởi động DB và áp dụng migration theo mục 8 (đọc lưu ý migration trước nếu DB đã có dữ liệu).
+2. Giữ `PAYMENT_PROVIDER=MOCK` trong `backend/.env`. Chạy `npm run start:dev` ở backend và `npm run dev` ở frontend.
+3. Đăng ký/đăng nhập, chọn món còn hàng, thanh toán. FE hiển thị **Thanh toán thử nghiệm**; không thu tiền thật, không cần merchant VNPay, Hash Secret hoặc Cloudflare. Backend vẫn lưu đơn/thanh toán, trừ kho, dùng voucher và cộng điểm nên cần DB và dữ liệu sản phẩm.
+4. Mock thành công chuyển tới chi tiết đơn `PAID`; không mở trang VNPay. Nếu thiếu menu, seed theo mục 8. Mock không thay thế việc kiểm thử chữ ký/IPN/cổng VNPay.
+
+FE đọc `{ "provider": "MOCK" }` hoặc `{ "provider": "VNPAY" }` từ `GET /payments/config` (không chứa khóa hoặc thông tin merchant, không cache). Không khai báo provider riêng ở FE. Không tải được cấu hình thì nút thanh toán bị khóa và yêu cầu tải lại trang, không tự rơi về Mock.
+
+### Chuyển sang VNPay Sandbox
+
+Đặt `PAYMENT_PROVIDER=VNPAY` trong `backend/.env`, cấu hình merchant/key/return/IPN theo các mục bên dưới rồi khởi động lại BE và tải lại FE. Đổi `.env.example` không thay `.env` thực tế: máy đang dùng `VNPAY` tiếp tục giữ cấu hình đó. Chỉ cần restart/rebuild FE khi đổi các biến môi trường FE như API URL/origin được phép.
+
+| Chế độ BE | Mở giao dịch mới | API bị chặn |
+| --- | --- | --- |
+| `MOCK` | `POST /payments` | `POST /payments/vnpay/create` trả 403 |
+| `VNPAY` | `POST /payments/vnpay/create` | `POST /payments` trả 403 |
+
+Thiếu provider trong môi trường local/test mặc định Mock; giá trị sai bị từ chối. Với `NODE_ENV=production`, BE chỉ cho phép `PAYMENT_PROVIDER=VNPAY` và từ chối khởi động nếu đang dùng Mock hoặc bỏ trống provider. Không triển khai môi trường thanh toán thật với cấu hình local.
+
+Đổi chế độ không chuyển đổi giao dịch cũ. IPN, return và API đối soát VNPay vẫn hoạt động để xử lý giao dịch đã mở, kể cả khi đang bật Mock; các kiểm tra chữ ký/quyền sở hữu vẫn giữ nguyên. Đơn có giao dịch VNPay đang chờ/đã thu tiền không thể xác nhận bằng Mock: cần đối soát, hoặc quay lại chế độ VNPay để tiếp tục. Không đổi chế độ giữa lúc đang thanh toán; FE đang mở với chế độ cũ có thể nhận 403 và cần tải lại trang.
+
+### Kết nối khi test VNPay
+
 | Cách test | Frontend | Backend | Tunnel cần bật |
 | --- | --- | --- | --- |
 | Test trên chính máy lập trình — nên bắt đầu bằng cách này | `http://localhost:3000` | `http://localhost:8080` | Tunnel backend để nhận IPN |
 | Test trên điện thoại hoặc chia sẻ trang cho người khác | URL HTTPS tunnel frontend | URL HTTPS tunnel backend | Cả hai tunnel |
 
-Luồng thanh toán hiện tại:
+Luồng thanh toán khi bật `VNPAY`:
 
 1. FE gửi giỏ hàng tới `POST /orders` để lấy `orderId`.
 2. FE gọi `POST /payments/vnpay/create`, kèm JWT và `Idempotency-Key`.
@@ -22,7 +46,7 @@ Luồng thanh toán hiện tại:
 5. VNPay đưa trình duyệt về endpoint return của BE; BE chuyển tiếp tới trang đơn hàng của FE. IPN và return có thể tới khác thứ tự; return không cập nhật DB trong code hiện tại.
 6. FE đọc trạng thái đơn từ BE. Việc trình duyệt quay về không tự chứng minh đơn đã được thanh toán.
 
-FE đã có phần kết nối VNPay trong `components/CheckoutModal.tsx`, `components/ResumeVnpayPayment.tsx` và `utils/startVnpayPayment.ts`; không cần tự ghép URL thanh toán trên FE.
+FE chọn luồng trong `utils/startPayment.ts`; phần kết nối VNPay nằm trong `utils/startVnpayPayment.ts`. Checkout và nút tiếp tục thanh toán đều dùng chế độ BE trả về; không cần tự ghép URL thanh toán trên FE.
 
 ## 2. Chuẩn bị thông tin merchant
 
@@ -198,6 +222,7 @@ PAYMENT_PROVIDER=VNPAY
 VNPAY_TMN_CODE=TMN_CODE_CUA_BAN
 VNPAY_HASH_SECRET=HASH_SECRET_CUA_BAN
 VNPAY_HOST=https://sandbox.vnpayment.vn
+VNPAY_TEST_MODE=true
 
 VNPAY_RETURN_URL=https://BACKEND-TUNNEL.trycloudflare.com/payments/vnpay/return
 VNPAY_IPN_URL=https://BACKEND-TUNNEL.trycloudflare.com/payments/vnpay/ipn
@@ -233,26 +258,37 @@ CORS_ORIGIN=http://localhost:3000,https://FRONTEND-TUNNEL.trycloudflare.com
 
 Không đưa `VNPAY_HASH_SECRET` vào FE hoặc biến có tiền tố `NEXT_PUBLIC_`. Không commit file `.env` thật lên GitHub; tài liệu này chỉ dùng placeholder.
 
+### Đổi môi trường cổng thanh toán
+
+- Sandbox: `VNPAY_TEST_MODE=true`, `VNPAY_HOST=https://sandbox.vnpayment.vn`.
+- Môi trường khác: đặt `VNPAY_TEST_MODE=false`, khai báo `VNPAY_HOST` là origin HTTPS do VNPay cấp (không có đường dẫn). Code yêu cầu khai báo host khi tắt test mode.
+- `VNPAY_QUERY_HOST` tùy chọn là origin HTTPS dùng cho API đối soát/hoàn tiền, mặc định cùng `VNPAY_HOST`. Nếu VNPay cấp host API khác host thanh toán thì phải điền riêng biến này.
+- SDK ép cả host thanh toán và host đối soát về sandbox khi bật test mode. Code sẽ từ chối cấu hình host khác trong chế độ này để tránh gọi nhầm môi trường.
+- Đổi thông tin merchant/key tương ứng, cập nhật origin được phép ở FE bên dưới và khởi động lại BE. Đổi mode/host chưa thay thế việc đăng ký merchant và xác nhận endpoint với VNPay.
+
 ## 6. Cấu hình frontend/.env.local
 
 Nếu test FE trên chính máy lập trình:
 
 ```dotenv
 NEXT_PUBLIC_API_URL=http://localhost:8080
+NEXT_PUBLIC_VNPAY_ALLOWED_ORIGINS=https://sandbox.vnpayment.vn
 ```
 
 Nếu mở FE bằng tunnel, dùng bộ cấu hình sau để cả điện thoại và máy khác gọi được BE:
 
 ```dotenv
 NEXT_PUBLIC_API_URL=https://BACKEND-TUNNEL.trycloudflare.com
+NEXT_PUBLIC_VNPAY_ALLOWED_ORIGINS=https://sandbox.vnpayment.vn
 DEV_TUNNEL_HOST=FRONTEND-TUNNEL.trycloudflare.com
 ```
 
 - `NEXT_PUBLIC_API_URL` là địa chỉ **backend**, không phải địa chỉ FE hoặc cổng VNPay. Không thêm `/payments/vnpay/create` vào biến này.
+- `NEXT_PUBLIC_VNPAY_ALLOWED_ORIGINS` chứa origin **cổng thanh toán** khớp `VNPAY_HOST`, không phải tunnel BE/FE. Có thể khai báo nhiều origin HTTPS ngăn bằng dấu phẩy; không chứa đường dẫn, query hoặc thông tin đăng nhập. FE so khớp chính xác origin (gồm cổng), không cho phép hostname gần giống. Nếu bỏ biến này, mặc định chỉ cho phép sandbox; nếu khai báo thì danh sách mới thay thế mặc định.
 - `DEV_TUNNEL_HOST` chỉ là hostname của **frontend tunnel**, không có `https://`, cổng hoặc đường dẫn. `next.config.ts` dùng biến này để cho phép dev server/HMR nhận origin của tunnel.
 - Khi FE mở qua HTTPS hoặc trên điện thoại, cấu hình API là `http://localhost:8080` sẽ không phù hợp: localhost trỏ tới thiết bị đang mở trình duyệt và còn có thể bị chặn do mixed content.
 
-Lưu file và khởi động lại frontend sau khi đổi các biến này. Với bản production build, thay `NEXT_PUBLIC_API_URL` thì cần build lại FE; hướng dẫn này tập trung vào dev local.
+Lưu file và khởi động lại frontend sau khi đổi các biến này. Với bản production build, thay biến `NEXT_PUBLIC_*` thì cần build lại FE; hướng dẫn này tập trung vào dev local.
 
 ## 7. Đăng ký IPN URL trên merchant VNPay
 
@@ -277,6 +313,10 @@ Khi mới lấy code hoặc có migration mới, chạy trong backend khi DB đ�
 
 **Kiểm tra trước nếu DB đã sử dụng nhánh khác:** nhánh này có chỉnh hai migration lịch sử `20261102193258_init_payment_voucher` và `20261103071149_finalize_payment_voucher_schema`. Nếu DB đã áp dụng nội dung cũ, cần đối chiếu lịch sử migration và schema thực tế trước khi tiếp tục. Có thể xem trạng thái bằng `npx prisma migrate status`, nhưng lệnh này không thay thế việc so sánh schema và nội dung SQL. Nếu Prisma báo lịch sử không khớp hoặc migration thất bại, dừng và kiểm tra cùng người quản lý DB; không dùng reset để xử lý DB cần giữ dữ liệu. Các lệnh ở đây dành cho DB local của project.
 
+**Tình trạng bàn giao:** chưa xác nhận các thành viên đã áp dụng phiên bản nào của hai migration này. Xem [hướng dẫn đối chiếu migration](./Kiem-tra-migration-VNPAY.md) trước khi migrate DB đã có dữ liệu. Việc sửa cấu hình host không xử lý lệch checksum.
+
+**DB local chỉ chứa dữ liệu thử nghiệm:** nếu được phép mất toàn bộ dữ liệu, kiểm tra `DATABASE_URL` trỏ đúng DB local rồi chạy `npx prisma migrate reset` trong thư mục `backend` để chạy lại bộ migration hiện tại. Lệnh này xóa dữ liệu trong DB/schema được kết nối. Xem [các bước reset và nạp lại dữ liệu mẫu](./Kiem-tra-migration-VNPAY.md#cách-làm-lại-db-local-chỉ-chứa-dữ-liệu-thử-nghiệm). Không xóa các file migration; tải lại code không tự sửa lịch sử trong DB. Với DB dùng chung hoặc cần giữ dữ liệu, thực hiện bước đối chiếu ở trên.
+
 ```powershell
 Set-Location 'D:\Software_engine\SWE_Project\backend'
 npm run prisma:generate
@@ -293,6 +333,19 @@ npm run prisma:seed
 Seed hiện dùng `upsert`, có cập nhật lại giá/tồn kho sản phẩm mẫu, voucher và mật khẩu tài khoản mẫu. Không chạy seed như bước bắt buộc mỗi lần mở ứng dụng hoặc trên DB đang giữ dữ liệu test cần bảo toàn. Có thể đăng ký tài khoản riêng qua `/auth/register` để kiểm thử.
 
 Nếu project đã đồng bộ schema thì không cần lặp lại các lệnh Prisma mỗi lần test. Nếu generate báo lỗi `EPERM` với `query_engine-windows.dll.node`, dừng backend đang sử dụng Prisma bằng `Ctrl + C`, chạy lại generate, rồi mở backend lại. Không cần dừng tunnel chỉ để generate Prisma.
+
+### Chạy E2E với DB riêng
+
+Tạo DB `brewlite_test` riêng trên PostgreSQL trước lần chạy đầu. Nếu chưa có `backend/.env.test`, sao chép từ `backend/.env.test.example` rồi kiểm tra tài khoản/cổng DB. Giữ `NODE_ENV=test`, tên DB `brewlite_test`, schema `public` và JWT secret chỉ dành cho test.
+
+```powershell
+Set-Location 'D:\Software_engine\SWE_Project\backend'
+npm run test:e2e -- --runInBand
+```
+
+Npm tự chạy `pretest:e2e`: đọc `.env.test`, kiểm tra DB test rồi dùng `prisma migrate deploy` áp dụng các migration còn thiếu trước khi chạy Jest. Bước này không reset hoặc seed DB; test tự tạo và dọn dữ liệu của lượt chạy. Cùng một hàm kiểm tra môi trường được dùng ở bước migrate và bước Jest để tránh hai bước trỏ khác DB. Nếu không đọc được `.env.test`, tên DB/môi trường/schema sai hoặc thiếu JWT secret thì dừng trước khi migrate.
+
+Thông báo Prisma “Environment variables loaded from .env” có thể vẫn xuất hiện; `DATABASE_URL` từ `.env.test` đã được nạp trước và được truyền vào tiến trình Prisma, không bị `.env` mặc định ghi đè. Xác nhận dòng datasource phải là `brewlite_test`. Nếu migration lỗi hoặc DB test có lịch sử khác, dừng để đối chiếu; không tự reset DB đang dùng. Chạy trực tiếp Jest bỏ qua bước `pretest:e2e`, nên dùng lệnh npm bên trên.
 
 ### Terminal chạy backend
 
@@ -408,19 +461,23 @@ FE lưu lượt checkout đang chờ bằng `sessionStorage`, theo tài khoản.
 
 ## 12. Rời trang VNPay hoặc URL đã hết hạn
 
+Mock và VNPay dùng chung `fulfillPaidOrderInTransaction` để gom số lượng theo sản phẩm, kiểm tra/trừ kho, tăng lượt dùng voucher và cộng điểm (10.000 VND đã trả = 1 điểm, làm tròn xuống). Các cập nhật này cùng transaction với trạng thái đơn và thanh toán; lỗi ghi dữ liệu sẽ rollback toàn bộ. Mock cũng áp dụng giới hạn lượt dùng voucher và không còn bỏ qua lỗi cộng điểm sau khi thanh toán. Với VNPay, lỗi ghi dữ liệu trả IPN `99` để có thể thử lại; trường hợp đã xác minh thu tiền nhưng thiếu kho/voucher được ghi `REFUND_REQUIRED` trước khi trừ kho hoặc cộng điểm.
+
 Vào **Đơn hàng → chọn đơn đang chờ → Tiếp tục thanh toán**.
 
 - URL còn hạn, giao dịch phù hợp: BE trả lại URL của đúng payment đang chờ.
-- Quá 10 phút từ lúc tạo đơn: BE tự chuyển đơn `PENDING`/`PAYMENT_FAILED` chưa ghi nhận tiền thành `CANCELLED`. Tác vụ quét chạy lúc khởi động và mỗi 15 giây; xem đơn hoặc tạo thanh toán cũng kiểm tra hạn ngay.
+- Quá 10 phút từ lúc tạo đơn: BE tự chuyển đơn `PENDING`/`PAYMENT_FAILED` chưa ghi nhận tiền thành `CANCELLED`. Tác vụ quét chạy lúc khởi động và mỗi 15 giây; xem chi tiết đơn hoặc tạo thanh toán cũng kiểm tra hạn ngay.
+- API lịch sử `GET /orders/me` chỉ đọc trạng thái đã lưu, không chờ hủy hàng loạt đơn hết hạn. Vì vậy lịch sử có thể còn hiện trạng thái chờ đến khi tác vụ nền xử lý; khi ít đơn và tác vụ hoạt động bình thường, thời gian chờ thường khoảng một chu kỳ quét. Mỗi lượt xử lý tối đa 100 đơn; nếu tồn nhiều đơn, tác vụ chậm hoặc gặp lỗi thì thời gian cập nhật có thể dài hơn. Mở chi tiết đơn sẽ kiểm tra hạn của riêng đơn đó ngay.
 - Xác minh đã thanh toán: ghi nhận kết quả bằng luồng xử lý dùng chung với IPN, rồi hiển thị trạng thái đơn mới nhất.
 - VNPay xác nhận giao dịch thất bại: có thể mở lượt mới nếu đơn vẫn còn trong hạn 10 phút, trạng thái và giới hạn số lượt cho phép.
 - Hủy đơn vì hết hạn không tự đổi payment thành `FAILED`: ngân hàng có thể đã thu tiền nhưng thông báo chưa về. Payment đang chờ được đánh dấu `ORDER_PAYMENT_EXPIRED` để đối soát.
-- Nếu thông báo xác nhận thu tiền về sau khi đơn bị hủy hoặc sau hạn: giữ đơn `CANCELLED`, ghi nhận payment `SUCCESS` với `REFUND_REQUIRED` để xử lý hoàn tiền. Không tự coi là đã hoàn tiền, không trừ kho hoặc cộng điểm cho đơn hủy.
+- Nếu thanh toán thực sự đúng hạn theo `vnp_PayDate` đã xác minh nhưng IPN đến muộn: xác nhận `PAID`. Nếu tác vụ nền đã tự hủy và payment còn `PENDING` với dấu `ORDER_PAYMENT_EXPIRED`, callback có thể khôi phục đơn, miễn chưa có giao dịch khác thu tiền và vẫn đủ kho/voucher. Không khôi phục đơn hủy vì lý do khác.
+- Nếu thanh toán thực sự quá hạn, thiếu bằng chứng thời gian để khôi phục đơn đã hủy, hoặc không thể giao hàng: giữ đơn `CANCELLED`, ghi nhận payment `SUCCESS` với `REFUND_REQUIRED` để xử lý thủ công. Không tự coi là đã hoàn tiền, không trừ kho hoặc cộng điểm cho đơn hủy.
 - Đơn đã xác nhận thu tiền không bị tác vụ hết hạn hủy lại. Quy tắc áp dụng cả các đơn đang chờ cũ khi BE chạy bản code mới. BE cần chạy để thực hiện tác vụ nền; khi khởi động lại sẽ quét các đơn quá hạn.
 
 Trong lần kiểm tra ngày 06/11/2026, API tra cứu sandbox đã trả `99 — Unexpected error`, không có chữ ký, cả với một giao dịch đã thanh toán và một giao dịch chờ. Đây là ghi nhận tại thời điểm test, không phải kết luận mọi tài khoản sandbox đều bị lỗi hoặc merchant chắc chắn chưa có quyền. Ngày 07/11 đã tìm thấy cấu hình merchant dùng nhầm `/vnpay/ipn` thay vì `/payments/vnpay/ipn`; sau đó các đơn mới đã ghi nhận `PAID` trong DB. Hai vấn đề khác nhau: querydr lỗi không chứng minh luồng tạo URL/IPN đều hỏng.
 
-Hiện tại API đối soát chỉ truy vấn payment đang chờ của đơn `PENDING`/`PAYMENT_FAILED`. Sau khi đơn đã `CANCELLED`, nút kiểm tra không tự phục hồi đơn hoặc tự hoàn tiền. Với đơn hủy nhưng khách đã trả tiền, cần nhận lại IPN hợp lệ hoặc xử lý đối soát qua merchant/VNPay; chức năng hoàn tiền tự động chưa được triển khai.
+API đối soát truy vấn payment đang chờ của đơn `PENDING`/`PAYMENT_FAILED`, hoặc đơn tự hủy có dấu `ORDER_PAYMENT_EXPIRED`. Kết quả đi qua cùng kiểm tra thời điểm như IPN; querydr không được bỏ qua chữ ký hoặc tự mở lại đơn đã hủy vì lý do khác. Giao diện hiện chỉ hiện nút kiểm tra cho đơn chờ/thất bại; đơn tự hủy có thể được xử lý bằng IPN hoặc gọi `POST /payments/vnpay/reconcile` trong Swagger với đúng tài khoản. Chức năng hoàn tiền tự động chưa được triển khai.
 
 Nếu tiếp tục gặp lỗi này: tra giao dịch trên trang merchant, rồi phản hồi email hỗ trợ VNPay với TmnCode, mã giao dịch, thời điểm gọi và thông báo lỗi. Không gửi Hash Secret. [Tài liệu querydr của VNPay](https://sandbox.vnpayment.vn/apis/docs/truy-van-hoan-tien/querydr%26refund.html) phân biệt mã truy vấn với trạng thái thanh toán; querydr trả `00` chưa đủ để kết luận đã thu tiền.
 
