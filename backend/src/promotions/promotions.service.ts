@@ -12,12 +12,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ApplyVoucherDto, ApplyVoucherResult } from './dto/apply-voucher.dto';
 import { DiscountType } from '../common/types/brewlite';
+import { addLoyaltyPointsInTransaction } from './loyalty-points';
 
 @Injectable()
 export class PromotionsService {
-  // Quy tắc quy đổi điểm mặc định: Mỗi 10.000 VND thanh toán = 1 điểm thưởng
-  private static readonly VND_PER_LOYALTY_POINT = 10000;
-
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -134,48 +132,8 @@ export class PromotionsService {
     orderId?: string,
     customPoints?: number,
   ) {
-    const pointsToAdd =
-      customPoints !== undefined
-        ? customPoints
-        : Math.floor(
-            Math.max(0, orderAmount) / PromotionsService.VND_PER_LOYALTY_POINT,
-          );
-
-    if (pointsToAdd <= 0) {
-      return {
-        userId,
-        pointsAdded: 0,
-        loyaltyPoints: 0,
-        transaction: null,
-      };
-    }
-
-    // Thực thi trong Prisma Transaction để đảm bảo tính toàn vẹn dữ liệu
-    return await (this.prisma as any).$transaction(async (tx: any) => {
-      const updatedUser = await tx.user.update({
-        where: { id: userId },
-        data: {
-          loyaltyPoints: {
-            increment: pointsToAdd,
-          },
-        },
-      });
-
-      const transaction = await tx.loyaltyTransaction.create({
-        data: {
-          userId,
-          orderId: orderId ?? null,
-          points: pointsToAdd,
-          type: 'EARN',
-        },
-      });
-
-      return {
-        userId: updatedUser.id,
-        pointsAdded: pointsToAdd,
-        loyaltyPoints: updatedUser.loyaltyPoints,
-        transaction,
-      };
-    });
+    return this.prisma.$transaction(tx =>
+      addLoyaltyPointsInTransaction(tx, userId, orderAmount, orderId, customPoints),
+    );
   }
 }

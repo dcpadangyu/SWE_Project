@@ -3,6 +3,7 @@ import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VnpayService } from './vnpay.service';
 import { VnpayCallbackService } from './vnpay-callback.service';
+import { ORDER_PAYMENT_EXPIRED } from '../orders/order-payment-window';
 
 @Injectable()
 export class VnpayReconciliationService {
@@ -38,8 +39,10 @@ export class VnpayReconciliationService {
     };
 
     const pending = order.payments.filter(p => p.status === PaymentStatus.PENDING);
+    const isTimeoutCancellation = order.status === OrderStatus.CANCELLED &&
+      pending.length === 1 && pending[0].errorCode === ORDER_PAYMENT_EXPIRED;
     if (pending.length !== 1 || pending[0].provider !== 'VNPAY' ||
-      (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED)) {
+      (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PAYMENT_FAILED && !isTimeoutCancellation)) {
       return describe();
     }
     const payment = pending[0];
@@ -67,6 +70,7 @@ export class VnpayReconciliationService {
           vnp_ResponseCode: status === '00' ? '00' : '02',
           vnp_TransactionStatus: status,
           vnp_TransactionNo: result.vnp_TransactionNo,
+          vnp_PayDate: result.vnp_PayDate,
         });
         message = ['00', '02'].includes(reply.RspCode)
           ? (status === '00' ? 'Đã ghi nhận thanh toán. Hãy kiểm tra trạng thái đơn.' :

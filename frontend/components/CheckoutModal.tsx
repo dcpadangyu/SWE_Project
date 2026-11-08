@@ -4,7 +4,8 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CartItem } from "@/types/brewlite";
 import { apiClient } from "@/utils/apiClient";
-import { startVnpayPayment } from "@/utils/startVnpayPayment";
+import { startPayment } from "@/utils/startPayment";
+import { usePaymentProvider } from "@/hooks/usePaymentProvider";
 
 import { authStorage } from "@/utils/authStorage";
 
@@ -67,6 +68,7 @@ export default function CheckoutModal({
   onClose,
 }: CheckoutModalProps) {
   const router = useRouter();
+  const { provider, error: configurationError } = usePaymentProvider();
   const submittingRef = useRef(false);
   const [voucherCode, setVoucherCode] = useState("");
   const [note, setNote] = useState("");
@@ -132,6 +134,7 @@ export default function CheckoutModal({
     setIsSubmitting(true);
 
     try {
+      if (!provider) throw new Error(configurationError || "Đang tải chế độ thanh toán. Vui lòng chờ.");
       const user = authStorage.getUser() as {
         id?: string;
       } | null;
@@ -238,7 +241,8 @@ export default function CheckoutModal({
       }
 
       const checkout = pending;
-      const destination = await startVnpayPayment(
+      const destination = await startPayment(
+        provider,
         checkout.orderId!, checkout.paymentKey,
         (key) => {
           checkout.paymentKey = key;
@@ -256,7 +260,7 @@ export default function CheckoutModal({
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "Không thể mở thanh toán VNPay.",
+          : "Không thể bắt đầu thanh toán. Vui lòng thử lại.",
       );
     } finally {
       submittingRef.current = false;
@@ -331,12 +335,15 @@ export default function CheckoutModal({
 
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p className="text-sm font-semibold text-amber-900">
-              Thanh toán qua VNPay
+              {provider === "MOCK" ? "Thanh toán thử nghiệm" : provider === "VNPAY" ? "Thanh toán qua VNPay" : "Đang tải chế độ thanh toán..."}
             </p>
 
             <p className="mt-1 text-xs text-amber-800">
-              Bạn sẽ được chuyển đến VNPay để chọn phương thức và xác nhận thanh
-              toán.
+              {configurationError || (provider === "MOCK"
+                ? "Giao dịch được giả lập, không thu tiền thật. Đơn hàng vẫn được lưu và xử lý trên hệ thống."
+                : provider === "VNPAY"
+                  ? "Bạn sẽ được chuyển đến VNPay để chọn phương thức và xác nhận thanh toán."
+                  : "Vui lòng chờ trước khi xác nhận đặt đơn.")}
             </p>
           </div>
 
@@ -400,10 +407,10 @@ export default function CheckoutModal({
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !provider}
             className="w-full rounded-lg bg-amber-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-amber-900 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {isSubmitting ? "Đang mở cổng thanh toán..." : "Tiếp tục với VNPay"}
+            {isSubmitting ? "Đang xử lý thanh toán..." : provider === "MOCK" ? "Thanh toán thử nghiệm" : provider === "VNPAY" ? "Tiếp tục với VNPay" : "Chưa thể thanh toán"}
           </button>
         </form>
       </div>

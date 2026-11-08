@@ -3,6 +3,7 @@ import type { Order } from '@prisma/client';
 import { assertOrderTransition } from './order-state-machine';
 
 export const ORDER_PAYMENT_WINDOW_MS = 10 * 60 * 1000;
+export const ORDER_PAYMENT_EXPIRED = 'ORDER_PAYMENT_EXPIRED';
 
 export function orderPaymentDeadline(createdAt: Date): Date {
   return new Date(createdAt.getTime() + ORDER_PAYMENT_WINDOW_MS);
@@ -28,7 +29,7 @@ export async function expireOrderInTransaction(
   // Hết hạn đơn không chứng minh ngân hàng chưa thu tiền. Giữ payment để đối soát.
   await tx.payment.updateMany({
     where: { orderId: order.id, status: PaymentStatus.PENDING },
-    data: { errorCode: 'ORDER_PAYMENT_EXPIRED', errorMessage: 'Đơn đã hủy do quá hạn thanh toán 10 phút.' },
+    data: { errorCode: ORDER_PAYMENT_EXPIRED, errorMessage: 'Đơn đã hủy do quá hạn thanh toán 10 phút.' },
   });
   return true;
 }

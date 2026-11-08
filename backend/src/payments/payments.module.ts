@@ -11,11 +11,13 @@ import { VnpayController } from './vnpay.controller';
 import { VnpayService } from './vnpay.service';
 import { VnpayCheckoutService } from './vnpay-checkout.service';
 import { VnpayReconciliationService } from './vnpay-reconciliation.service';
+import { PaymentConfiguration, PaymentConfigurationController } from './payment-configuration';
 
 @Module({
   imports: [AuthModule, PrismaModule, PromotionsModule],
-  controllers: [PaymentsController, VnpayController],
+  controllers: [PaymentsController, VnpayController, PaymentConfigurationController],
   providers: [
+    PaymentConfiguration,
     PaymentsService,
     VnpayService,
     VnpayCheckoutService,

@@ -161,7 +161,7 @@ export class OrdersService {
   }
   /** Lịch sử đơn của chính user, mới nhất lên đầu. */
   async findMyOrders(userId: string) {
-    await this.expirationService?.expireDueOrders(userId);
+    // Chỉ đọc lịch sử; tác vụ nền xử lý hết hạn để request không phải chờ từng transaction.
     const orders = await this.prisma.order.findMany({
       where: { userId },
       include: orderWithItems.include,

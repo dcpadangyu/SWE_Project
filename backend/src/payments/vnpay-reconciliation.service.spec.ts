@@ -11,7 +11,7 @@ describe('VNPay: xác minh URL hết hạn', () => {
       id: 'payment-1', provider: 'VNPAY', attemptNumber: 1,
       status: PaymentStatus.PENDING as PaymentStatus,
       amount: new Prisma.Decimal(50000), expiresAt: new Date(0),
-      paymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html', errorCode: null,
+      paymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html', errorCode: null as string | null,
     };
     const order = {
       id: 'order-1', status: OrderStatus.PENDING as OrderStatus,
@@ -21,6 +21,7 @@ describe('VNPay: xác minh URL hết hạn', () => {
       isVerified: true, isSuccess: true, vnp_ResponseCode: '00',
       vnp_Command: 'querydr', vnp_TxnRef: payment.id, vnp_Amount: 5000000,
       vnp_TransactionStatus: '02', vnp_TransactionType: '01', vnp_TransactionNo: '123456',
+      vnp_PayDate: '20261108080958',
     };
     const prisma = { order: { findFirst: jest.fn().mockResolvedValue(order) } };
     const gateway = {
@@ -54,7 +55,24 @@ describe('VNPay: xác minh URL hết hạn', () => {
     await expect(request()).resolves.toMatchObject({ status: 'PAID', canPay: false });
     expect(callback.confirmVerifiedPayment).toHaveBeenCalledWith(expect.objectContaining({
       vnp_Amount: 50000, vnp_ResponseCode: '00', isSuccess: true,
+      vnp_PayDate: response.vnp_PayDate,
     }));
+  });
+
+  it('cho đối soát đơn tự hủy để xử lý thanh toán đúng hạn mà IPN đến trễ', async () => {
+    const { request, order, payment, response, callback } = setup();
+    order.status = OrderStatus.CANCELLED;
+    payment.errorCode = 'ORDER_PAYMENT_EXPIRED';
+    response.vnp_TransactionStatus = '00';
+    await expect(request()).resolves.toMatchObject({ status: 'PAID', canPay: false });
+    expect(callback.confirmVerifiedPayment).toHaveBeenCalledWith(expect.objectContaining({ vnp_PayDate: response.vnp_PayDate }));
+  });
+
+  it('không tự đối soát/khôi phục đơn hủy vì lý do khác', async () => {
+    const { request, order, gateway } = setup();
+    order.status = OrderStatus.CANCELLED;
+    await expect(request()).resolves.toMatchObject({ status: 'CANCELLED', canPay: false });
+    expect(gateway.queryPayment).not.toHaveBeenCalled();
   });
 
   it.each([

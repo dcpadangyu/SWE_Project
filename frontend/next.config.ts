@@ -8,10 +8,10 @@ const nextConfig: NextConfig = {
     'localhost',
     '127.0.0.1',
     // Chỉ cho phép hostname tunnel đang dùng; đổi DEV_TUNNEL_HOST khi URL đổi.
-    process.env.DEV_TUNNEL_HOST || 'level-answered-maple-dominant.trycloudflare.com',
+    ...(process.env.DEV_TUNNEL_HOST?.trim() ? [process.env.DEV_TUNNEL_HOST.trim()] : []),
   ],
   experimental: {
-    agentFeedback: true,
+    agentFeedback: false,
   },
   cacheComponents: true,
   partialPrefetching: true,

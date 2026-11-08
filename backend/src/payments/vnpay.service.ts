@@ -33,17 +33,54 @@ export class VnpayService {
 
   private getClient(): VNPay {
     if (!this.client) {
+      const mode = process.env.VNPAY_TEST_MODE?.trim() ?? 'true';
+      if (mode !== 'true' && mode !== 'false') {
+        throw new ServiceUnavailableException('VNPAY_TEST_MODE phải là true hoặc false.');
+      }
+      const testMode = mode === 'true';
+      // SDK ép cả hai host về sandbox khi testMode=true.
+      const host = this.getGatewayOrigin(
+        process.env.VNPAY_HOST?.trim() ||
+          (testMode ? 'https://sandbox.vnpayment.vn' : this.getRequiredEnv('VNPAY_HOST')),
+      );
+      if (testMode && host !== 'https://sandbox.vnpayment.vn') {
+        throw new ServiceUnavailableException(
+          'Host khác sandbox yêu cầu VNPAY_TEST_MODE=false.',
+        );
+      }
+      const queryHost = this.getGatewayOrigin(
+        process.env.VNPAY_QUERY_HOST?.trim() || host,
+      );
+      if (testMode && queryHost !== host) {
+        throw new ServiceUnavailableException(
+          'VNPAY_QUERY_HOST phải là host sandbox khi VNPAY_TEST_MODE=true.',
+        );
+      }
       this.client = new VNPay({
         tmnCode: this.getRequiredEnv('VNPAY_TMN_CODE'),
         secureSecret: this.getRequiredEnv('VNPAY_HASH_SECRET'),
-        vnpayHost: process.env.VNPAY_HOST || 'https://sandbox.vnpayment.vn',
-        testMode: true,
+        vnpayHost: host,
+        queryDrAndRefundHost: queryHost,
+        testMode,
         hashAlgorithm: HashAlgorithm.SHA512,
         enableLog: false,
       });
     }
 
     return this.client;
+  }
+
+  private getGatewayOrigin(value: string): string {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password ||
+          url.pathname !== '/' || url.search || url.hash) throw new Error();
+      return url.origin;
+    } catch {
+      throw new ServiceUnavailableException(
+        'Host VNPay phải là HTTPS origin, không chứa đường dẫn, thông tin đăng nhập hoặc query.',
+      );
+    }
   }
 
   // Định dạng yyyyMMddHHmmss theo giờ Việt Nam.

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { OrderStatus, PaymentStatus, TransactionType } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 
 import { assertOrderTransition } from '../orders/order-state-machine';
 
@@ -13,12 +13,14 @@ import type { ReturnQueryFromVNPay } from 'vnpay';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { VnpayService } from './vnpay.service';
-import { expireOrderInTransaction } from '../orders/order-payment-window';
+import { fulfillPaidOrderInTransaction } from './fulfill-paid-order';
+import { expireOrderInTransaction, ORDER_PAYMENT_EXPIRED } from '../orders/order-payment-window';
+import { isVnpayPaymentOnTime, parseVnpayPayDate } from './vnpay-payment-time';
 
 export type VerifiedPaymentResult = Pick<
   ReturnType<VnpayService['verifyIpn']>,
   'isVerified' | 'isSuccess' | 'message' | 'vnp_TmnCode' | 'vnp_TxnRef' |
-  'vnp_Amount' | 'vnp_ResponseCode' | 'vnp_TransactionStatus' | 'vnp_TransactionNo'
+  'vnp_Amount' | 'vnp_ResponseCode' | 'vnp_TransactionStatus' | 'vnp_TransactionNo' | 'vnp_PayDate'
 >;
 
 @Injectable()
@@ -100,6 +102,11 @@ export class VnpayCallbackService {
         return reply('97', 'Missing transaction number');
       }
 
+      const paidAt = succeeded ? parseVnpayPayDate(result.vnp_PayDate) : null;
+      if (succeeded && result.vnp_PayDate !== undefined && result.vnp_PayDate !== '' && !paidAt) {
+        return reply('97', 'Invalid payment date');
+      }
+
       const foundPayment = await this.prisma.payment.findUnique({
         where: {
           id: String(result.vnp_TxnRef),
@@ -151,9 +158,14 @@ export class VnpayCallbackService {
             return reply('02', 'Already confirmed');
           }
 
-          if (await expireOrderInTransaction(tx, order)) {
+          const paidOnTime = succeeded && paidAt !== null && isVnpayPaymentOnTime(paidAt, order, payment);
+          // IPN về chậm không được tự biến thanh toán đúng hạn thành quá hạn.
+          if (!paidOnTime && await expireOrderInTransaction(tx, order)) {
             order.status = OrderStatus.CANCELLED;
           }
+
+          const recoverTimedOutOrder = paidOnTime && order.status === OrderStatus.CANCELLED &&
+            payment.status === PaymentStatus.PENDING && payment.errorCode === ORDER_PAYMENT_EXPIRED;
 
           const transactionCode = result.vnp_TransactionNo
             ? String(result.vnp_TransactionNo)
@@ -172,7 +184,7 @@ export class VnpayCallbackService {
               data: {
                 status: PaymentStatus.SUCCESS,
                 transactionCode,
-                completedAt: new Date(),
+                completedAt: paidAt ?? new Date(),
                 errorCode: 'REFUND_REQUIRED',
                 errorMessage: reason,
               },
@@ -260,7 +272,9 @@ export class VnpayCallbackService {
                 id: payment.id,
               },
               data: {
-                errorCode: 'RECONCILIATION_REQUIRED',
+                // Giữ nguồn gốc tự hủy để một IPN đúng hạn về sau còn đối soát được.
+                errorCode: payment.errorCode === ORDER_PAYMENT_EXPIRED
+                  ? ORDER_PAYMENT_EXPIRED : 'RECONCILIATION_REQUIRED',
                 errorMessage: `VNPay response=${responseCode}, status=${transactionStatus}`,
               },
             });
@@ -270,111 +284,34 @@ export class VnpayCallbackService {
             return reply('00', 'Notification recorded');
           }
 
+          if (paidAt && !paidOnTime) {
+            return requireRefund('Thời điểm thanh toán nằm ngoài hạn của giao dịch, cần đối soát hoàn tiền.');
+          }
+
           // 4. Thành công nhưng đơn/giao dịch không còn ở bước chờ.
           if (
             payment.status !== PaymentStatus.PENDING ||
-            order.status !== OrderStatus.PENDING
+            (order.status !== OrderStatus.PENDING && !recoverTimedOutOrder)
           ) {
             return requireRefund(
               'Đã thu tiền nhưng trạng thái đơn cần kiểm tra thủ công.',
             );
           }
 
-          // Kiểm tra và khóa voucher trước khi sử dụng lượt.
-          let voucherId: string | undefined;
-
-          if (order.voucherCode) {
-            await tx.$queryRaw`
-            SELECT "id"
-            FROM "vouchers"
-            WHERE "code" = ${order.voucherCode}
-            FOR UPDATE
-          `;
-
-            const voucher = await tx.voucher.findUnique({
-              where: {
-                code: order.voucherCode,
-              },
+          if (recoverTimedOutOrder) {
+            const collected = await tx.payment.findFirst({
+              where: { orderId: order.id, status: { in: [PaymentStatus.SUCCESS, PaymentStatus.REFUNDED] } },
+              select: { id: true },
             });
-
-            if (
-              !voucher ||
-              (voucher.usageLimit !== null &&
-                voucher.usedCount >= voucher.usageLimit)
-            ) {
-              return requireRefund(
-                'Voucher không còn lượt sử dụng sau khi thanh toán.',
-              );
-            }
-
-            voucherId = voucher.id;
+            if (collected) return requireRefund('Đơn đã có giao dịch thu tiền khác, cần đối soát.');
           }
 
-          // Cộng dồn các dòng cùng sản phẩm.
-          const quantities = new Map<string, number>();
+          const fulfillment = await fulfillPaidOrderInTransaction(tx, order, payment.amount);
+          if (!fulfillment.ok) return requireRefund(fulfillment.message);
 
-          for (const item of order.items) {
-            quantities.set(
-              item.productId,
-              (quantities.get(item.productId) ?? 0) + item.quantity,
-            );
-          }
-
-          // Khóa theo thứ tự cố định để giảm nguy cơ deadlock.
-          const productIds = [...quantities.keys()].sort();
-
-          // Kiểm tra tất cả món trước khi bắt đầu trừ kho.
-          for (const productId of productIds) {
-            await tx.$queryRaw`
-            SELECT "id"
-            FROM "products"
-            WHERE "id" = ${productId}
-            FOR UPDATE
-          `;
-
-            const product = await tx.product.findUnique({
-              where: {
-                id: productId,
-              },
-            });
-
-            const quantity = quantities.get(productId)!;
-
-            if (!product || !product.isAvailable || product.stock < quantity) {
-              return requireRefund(
-                'Đã thu tiền nhưng sản phẩm không đủ tồn kho.',
-              );
-            }
-          }
-
-          // 5. Trừ kho sau khi tất cả món đã hợp lệ.
-          for (const productId of productIds) {
-            const quantity = quantities.get(productId)!;
-
-            const updated = await tx.product.updateMany({
-              where: {
-                id: productId,
-                stock: {
-                  gte: quantity,
-                },
-              },
-              data: {
-                stock: {
-                  decrement: quantity,
-                },
-                version: {
-                  increment: 1,
-                },
-              },
-            });
-
-            if (updated.count !== 1) {
-              // Ném lỗi để rollback cả transaction.
-              throw new Error('Stock update conflict');
-            }
-          }
-
-          assertOrderTransition(order.status, OrderStatus.PAID);
+          // Ngoại lệ đối soát duy nhất: tự hủy do timeout nhưng có chứng từ ký số
+          // xác nhận trả tiền đúng hạn. Không mở CANCELLED -> PAID cho API thường.
+          if (!recoverTimedOutOrder) assertOrderTransition(order.status, OrderStatus.PAID);
 
           await tx.order.update({
             where: {
@@ -392,49 +329,11 @@ export class VnpayCallbackService {
             data: {
               status: PaymentStatus.SUCCESS,
               transactionCode,
-              completedAt: new Date(),
+              completedAt: paidAt ?? new Date(),
               errorCode: null,
               errorMessage: null,
             },
           });
-
-          if (voucherId) {
-            await tx.voucher.update({
-              where: {
-                id: voucherId,
-              },
-              data: {
-                usedCount: {
-                  increment: 1,
-                },
-              },
-            });
-          }
-
-          // Quy tắc hiện tại của project: 10.000 VND = 1 điểm.
-          const points = Math.floor(payment.amount.toNumber() / 10000);
-
-          if (points > 0) {
-            await tx.user.update({
-              where: {
-                id: order.userId,
-              },
-              data: {
-                loyaltyPoints: {
-                  increment: points,
-                },
-              },
-            });
-
-            await tx.loyaltyTransaction.create({
-              data: {
-                userId: order.userId,
-                orderId: order.id,
-                points,
-                type: TransactionType.EARN,
-              },
-            });
-          }
 
           return reply('00', 'Confirm Success');
         },

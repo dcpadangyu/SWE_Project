@@ -33,7 +33,7 @@ export type Size = 'S' | 'M' | 'L';
 /**
  * Máy trạng thái đơn hàng (Order State Machine) gồm 7 trạng thái chuẩn (ADR-003):
  * - PENDING: Vừa tạo đơn, đang chờ thanh toán
- * - PAID: Đã thanh toán không tiền mặt thành công qua Mock Payment Gateway
+ * - PAID: Đã thanh toán không tiền mặt thành công qua cổng Mock hoặc VNPay
  * - PREPARING: Barista tại quầy đang tiến hành pha chế đồ uống
  * - READY: Đã pha xong, sẵn sàng để khách đến quầy nhận nước
  * - COMPLETED: Đã bàn giao đồ uống cho khách (Trạng thái kết thúc thành công)
@@ -60,6 +60,9 @@ export type PaymentMethod = 'E_WALLET' | 'BANK_CARD';
  * Trạng thái của một lần thử thanh toán (Payment Attempt)
  */
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
+
+/** Nhà cung cấp thanh toán, khác với phương thức ví/thẻ. */
+export type PaymentProvider = 'MOCK' | 'VNPAY';
 
 /**
  * Hình thức giảm giá của Voucher (A1)
@@ -167,6 +170,7 @@ export interface Order {
   note?: string;          // Ghi chú của khách hàng (ít đường, nhiều đá...)
   checkoutKey?: string;   // Khóa Idempotency-Key chống trừ tiền hoặc tạo đơn 2 lần
   createdAt: string;      // Thời điểm đặt đơn
+  paymentExpiresAt?: string; // Hạn thanh toán do backend cung cấp (ISO 8601)
   updatedAt?: string;     // Thời điểm cập nhật đơn gần nhất
 }
 
@@ -200,13 +204,17 @@ export interface Payment {
   attemptNumber: number;          // Số thứ tự lần thử (tối đa 3 lần: 1, 2, 3)
   idempotencyKey: string;         // Khóa chống lặp giao dịch khi rớt mạng
   paymentMethod: PaymentMethod;   // Ví điện tử hoặc Thẻ ngân hàng
+  provider: PaymentProvider;      // Nhà cung cấp xử lý giao dịch
+  paymentUrl?: string | null;     // URL thanh toán; null/không có với giao dịch Mock
+  expiresAt?: string | null;      // Hạn URL thanh toán (ISO 8601); không phải thời gian nhận IPN
   amount: number;                 // Số tiền thanh toán (khớp với order.totalAmount)
   status: PaymentStatus;          // Trạng thái giao dịch (PENDING, SUCCESS, FAILED...)
-  transactionCode?: string;       // Mã tham chiếu từ cổng thanh toán Mock trả về
+  transactionCode?: string;       // Mã tham chiếu từ cổng thanh toán trả về
   errorCode?: string;             // Mã lỗi nếu thanh toán bị từ chối
   errorMessage?: string;          // Thông báo lỗi thân thiện hiển thị cho khách
   createdAt: string;              // Thời điểm tạo giao dịch
-  completedAt?: string;           // Thời điểm nhận kết quả từ cổng thanh toán
+  updatedAt?: string;             // Thời điểm cập nhật giao dịch (ISO 8601)
+  completedAt?: string;           // Thời điểm thanh toán; VNPay ưu tiên vnp_PayDate đã xác minh
   refundedAt?: string;            // Thời điểm hoàn tiền (nếu hủy đơn sau khi đã trừ tiền)
 }
 

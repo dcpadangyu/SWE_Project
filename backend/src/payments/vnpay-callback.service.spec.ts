@@ -40,7 +40,7 @@ describe('VNPay: kết quả xác minh dùng chung IPN/querydr', () => {
     const payment = { id: 'payment-1', orderId: 'order-1', provider: 'VNPAY',
       status: PaymentStatus.PENDING as PaymentStatus, amount: new Prisma.Decimal(50000) };
     const order = { id: 'order-1', userId: 'user-1', status: OrderStatus.PENDING as OrderStatus,
-      createdAt: new Date(), voucherCode: null, items: [{ productId: 'product-1', quantity: 1 }] };
+      createdAt: new Date(), voucherCode: 'BREW10', items: [{ productId: 'product-1', quantity: 1 }] };
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([]),
       payment: {
@@ -57,6 +57,10 @@ describe('VNPay: kết quả xác minh dùng chung IPN/querydr', () => {
       },
       user: { update: jest.fn().mockResolvedValue({}) },
       loyaltyTransaction: { create: jest.fn().mockResolvedValue({}) },
+      voucher: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'voucher-1', usageLimit: 10, usedCount: 9 }),
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
     const prisma = {
       payment: { findUnique: jest.fn().mockImplementation(async () => ({ ...payment })) },
@@ -77,6 +81,36 @@ describe('VNPay: kết quả xác minh dùng chung IPN/querydr', () => {
     expect(tx.product.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.user.update).toHaveBeenCalledTimes(1);
     expect(tx.loyaltyTransaction.create).toHaveBeenCalledTimes(1);
+    expect(tx.voucher.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('lỗi ghi điểm trả IPN 99 để thử lại, không xác nhận thành công hoặc đánh dấu hoàn tiền', async () => {
+    const payment = { id: 'payment-1', orderId: 'order-1', provider: 'VNPAY',
+      status: PaymentStatus.PENDING, amount: new Prisma.Decimal(50000) };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      payment: { findUniqueOrThrow: jest.fn().mockResolvedValue(payment), update: jest.fn() },
+      order: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'order-1', userId: 'user-1',
+          status: OrderStatus.PENDING, createdAt: new Date(), voucherCode: null,
+          items: [{ productId: 'product-1', quantity: 1 }] }),
+        update: jest.fn(),
+      },
+      product: { findUnique: jest.fn().mockResolvedValue({ stock: 10, version: 1, isAvailable: true }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      user: { update: jest.fn().mockResolvedValue({}) },
+      loyaltyTransaction: { create: jest.fn().mockRejectedValue(new Error('loyalty write failed')) },
+    };
+    const prisma = { payment: { findUnique: jest.fn().mockResolvedValue(payment) },
+      $transaction: jest.fn().mockImplementation(callback => callback(tx)) };
+    const gateway = { getMerchantCode: jest.fn().mockReturnValue('TESTCODE') };
+    const service = new VnpayCallbackService(prisma as unknown as PrismaService, gateway as unknown as VnpayService);
+    const result = await service.confirmVerifiedPayment({ isVerified: true, isSuccess: true,
+      message: 'Success', vnp_TmnCode: 'TESTCODE', vnp_TxnRef: payment.id, vnp_Amount: 50000,
+      vnp_ResponseCode: '00', vnp_TransactionStatus: '00', vnp_TransactionNo: '123456' });
+    expect(result.RspCode).toBe('99');
+    expect(tx.order.update).not.toHaveBeenCalled();
+    expect(tx.payment.update).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('IPN lỗi của lượt cũ không đổi trạng thái lượt mới (lượt mới: %s)', async (hasNewer) => {

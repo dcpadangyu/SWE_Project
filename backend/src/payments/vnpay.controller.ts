@@ -27,6 +27,7 @@ import { CreateVnpayPaymentDto } from './dto/create-vnpay-payment.dto';
 import { VnpayCheckoutService } from './vnpay-checkout.service';
 import { VnpayCallbackService } from './vnpay-callback.service';
 import { VnpayReconciliationService } from './vnpay-reconciliation.service';
+import { PaymentConfiguration } from './payment-configuration';
 
 interface AuthenticatedUser {
   id: string;
@@ -39,6 +40,7 @@ export class VnpayController {
     private readonly checkoutService: VnpayCheckoutService,
     private readonly callbackService: VnpayCallbackService,
     private readonly reconciliationService: VnpayReconciliationService,
+    private readonly configuration: PaymentConfiguration,
   ) {}
 
   @Post('create')
@@ -59,6 +61,7 @@ export class VnpayController {
     @Body() dto: CreateVnpayPaymentDto,
     @Req() req: Request,
   ) {
+    this.configuration.requireProvider('VNPAY');
     const ipAddress = (
       req.ip ||
       req.socket.remoteAddress ||

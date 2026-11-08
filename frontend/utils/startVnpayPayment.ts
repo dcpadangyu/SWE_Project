@@ -36,9 +36,24 @@ export async function startVnpayPayment(
     payment = await create(retryKey);
   }
 
-  const destination = new URL(payment.paymentUrl);
+  // NEXT_PUBLIC_* được Next.js chốt lúc build; chỉ cho phép đúng origin đã cấu hình.
+  const configuredOrigins = process.env.NEXT_PUBLIC_VNPAY_ALLOWED_ORIGINS ??
+    'https://sandbox.vnpayment.vn';
+  let destination: URL;
+  let allowedOrigins: string[];
+  try {
+    destination = new URL(payment.paymentUrl);
+    allowedOrigins = configuredOrigins.split(',').map(value => {
+      const url = new URL(value.trim());
+      if (url.protocol !== 'https:' || url.username || url.password ||
+          url.pathname !== '/' || url.search || url.hash) throw new Error();
+      return url.origin;
+    });
+  } catch {
+    throw new Error('Địa chỉ cổng thanh toán không hợp lệ. Hãy kiểm tra cấu hình VNPay.');
+  }
   if (payment.orderId !== orderId || destination.protocol !== 'https:' ||
-    destination.hostname !== 'sandbox.vnpayment.vn') {
+    destination.username || destination.password || !allowedOrigins.includes(destination.origin)) {
     throw new Error('Địa chỉ cổng thanh toán không hợp lệ. Hãy kiểm tra lại đơn hàng.');
   }
   return { kind: 'payment', url: destination.toString() };
