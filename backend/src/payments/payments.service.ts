@@ -14,9 +14,10 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { PromotionsService } from '../promotions/promotions.service';
 import { assertOrderTransition } from '../orders/order-state-machine';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { fulfillPaidOrderInTransaction } from './fulfill-paid-order';
+import { expireOrderInTransaction } from '../orders/order-payment-window';
 
 export interface PaymentExecutionResult {
   replayed: boolean;
@@ -37,10 +38,7 @@ export interface PaymentExecutionResult {
 
 @Injectable()
 export class PaymentsService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly promotionsService?: PromotionsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Xử lý thanh toán đơn hàng (Task 8 + Task 10.2 & 10.3)
@@ -70,6 +68,12 @@ export class PaymentsService {
     });
 
     if (existingPayment) {
+      if (existingPayment.order.userId && existingPayment.order.userId !== userId) {
+        throw new ForbiddenException('Bạn không có quyền thanh toán đơn hàng của người khác.');
+      }
+      if (existingPayment.provider && existingPayment.provider !== 'MOCK') {
+        throw new ConflictException('Khóa này thuộc giao dịch VNPay. Không thể xác nhận bằng thanh toán Mock.');
+      }
       if (existingPayment.orderId !== dto.orderId) {
         throw new ConflictException(
           'Idempotency-Key đã được sử dụng cho một đơn hàng khác.',
@@ -125,6 +129,15 @@ export class PaymentsService {
       throw new ForbiddenException(
         'Bạn không có quyền thanh toán đơn hàng của người khác.',
       );
+    }
+
+    // Chặn cả nhánh mô phỏng lỗi và giới hạn số lần thử nếu còn giao dịch VNPay.
+    const existingVnpay = await this.prisma.payment.findFirst({
+      where: { orderId: order.id, provider: 'VNPAY', status: { in: [PaymentStatus.PENDING, PaymentStatus.SUCCESS, PaymentStatus.REFUNDED] } },
+      select: { id: true },
+    });
+    if (existingVnpay) {
+      throw new ConflictException('Đơn có giao dịch VNPay cần đối soát. Không thể chuyển sang thanh toán Mock.');
     }
 
     if (
@@ -226,53 +239,25 @@ export class PaymentsService {
     assertOrderTransition(currentStatus, OrderStatus.PAID);
 
     const txResult = await this.prisma.$transaction(async (tx) => {
-      // Nhóm tổng số lượng cần trừ theo từng sản phẩm (tránh trừ lặp nếu có 2 dòng cùng món khác size)
-      const productDeltas = new Map<string, number>();
-      for (const item of order.items) {
-        const currentQty = productDeltas.get(item.productId) ?? 0;
-        productDeltas.set(item.productId, currentQty + item.quantity);
+      // Cùng khóa order với VNPay; đọc lại để hai request không trừ kho/cộng điểm hai lần.
+      await tx.$queryRaw`SELECT "id" FROM "orders" WHERE "id" = ${order.id} FOR UPDATE`;
+      const current = await tx.order.findUniqueOrThrow({
+        where: { id: order.id }, include: { items: true },
+      });
+      if (current.status !== OrderStatus.PENDING && current.status !== OrderStatus.PAYMENT_FAILED) {
+        throw new ConflictException('Đơn hàng không còn ở trạng thái chờ thanh toán.');
       }
-
-      // Optimistic Locking: Kiểm tra và trừ tồn kho có điều kiện version
-      for (const [productId, requiredQty] of productDeltas.entries()) {
-        const product = await tx.product.findUnique({
-          where: { id: productId },
-        });
-
-        if (!product || !product.isAvailable) {
-          throw new ConflictException({
-            code: 'OUT_OF_STOCK',
-            message: `Sản phẩm ${product?.name ?? productId} không còn phục vụ.`,
-          });
-        }
-
-        if (product.stock < requiredQty) {
-          throw new ConflictException({
-            code: 'OUT_OF_STOCK',
-            message: `Sản phẩm "${product.name}" không đủ tồn kho (còn ${product.stock}, yêu cầu ${requiredQty}).`,
-          });
-        }
-
-        // Cập nhật có điều kiện version và stock (Optimistic Locking - Task 10.3)
-        const updatedCount = await tx.product.updateMany({
-          where: {
-            id: productId,
-            version: product.version,
-            stock: { gte: requiredQty },
-          },
-          data: {
-            stock: { decrement: requiredQty },
-            version: { increment: 1 },
-          },
-        });
-
-        if (updatedCount.count === 0) {
-          // Xung đột đồng thời: Đã có giao dịch khác mua món này trong tích tắc
-          throw new ConflictException({
-            code: 'CONCURRENCY_CONFLICT',
-            message: `Xung đột cập nhật đồng thời cho sản phẩm "${product.name}". Vui lòng thử lại.`,
-          });
-        }
+      const vnpayPayment = await tx.payment.findFirst({
+        where: { orderId: current.id, provider: 'VNPAY', status: { in: [PaymentStatus.PENDING, PaymentStatus.SUCCESS, PaymentStatus.REFUNDED] } },
+        select: { id: true },
+      });
+      if (vnpayPayment) {
+        throw new ConflictException('Đơn có giao dịch VNPay cần đối soát. Không thể chuyển sang thanh toán Mock.');
+      }
+      if (await expireOrderInTransaction(tx, current)) return { expired: true as const };
+      const fulfillment = await fulfillPaidOrderInTransaction(tx, current, current.totalAmount);
+      if (!fulfillment.ok) {
+        throw new ConflictException({ code: fulfillment.code, message: fulfillment.message });
       }
 
       // Cập nhật trạng thái đơn hàng sang PAID
@@ -288,7 +273,7 @@ export class PaymentsService {
           attemptNumber,
           idempotencyKey: key,
           paymentMethod: dto.paymentMethod,
-          amount: order.totalAmount,
+          amount: current.totalAmount,
           status: PaymentStatus.SUCCESS,
           transactionCode: `PAY-${randomUUID().slice(0, 8).toUpperCase()}`,
           completedAt: new Date(),
@@ -298,18 +283,9 @@ export class PaymentsService {
       return { order: updatedOrder, payment: paymentRecord };
     });
 
-    // 5. Tích lũy điểm thưởng Loyalty sau khi đơn hàng PAID thành công (Task 10.4 & AC-13.2)
-    if (this.promotionsService) {
-      try {
-        await this.promotionsService.addLoyaltyPoints(
-          userId,
-          Number(order.totalAmount),
-          order.id,
-        );
-      } catch (err) {
-        // Ghi log để không làm gián đoạn phản hồi thanh toán thành công
-        console.error('Lỗi khi tích lũy điểm thưởng loyalty:', err);
-      }
+    // Hủy đơn quá hạn phải commit trước khi trả lỗi.
+    if ('expired' in txResult) {
+      throw new ConflictException('Đơn đã hủy do quá hạn thanh toán 10 phút.');
     }
 
     return {

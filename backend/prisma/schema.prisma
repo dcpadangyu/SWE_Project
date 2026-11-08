@@ -179,6 +179,15 @@ model Payment {
   completedAt     DateTime?     @map("completed_at")
   refundedAt      DateTime?     @map("refunded_at")
 
+  // Nhà cung cấp thanh toán: MOCK hoặc VNPAY.
+  provider String @default("MOCK")
+
+  // Giữ URL để phát lại khi client gửi trùng Idempotency-Key.
+  paymentUrl String? @map("payment_url")
+
+  // Thời điểm hết hạn của URL thanh toán.
+  expiresAt DateTime? @map("expires_at")
+
   @@unique([orderId, attemptNumber])
   @@index([orderId])
   @@map("payments")

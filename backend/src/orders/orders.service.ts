@@ -8,6 +8,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { OrderExpirationService } from './order-expiration.service';
+import { orderPaymentDeadline } from './order-payment-window';
 import {
   assertStockAvailable,
   buildOrderLines,
@@ -30,6 +32,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly promotionsService?: PromotionsService,
+    private readonly expirationService?: OrderExpirationService,
   ) {}
   async create(
     userId: string,
@@ -38,7 +41,9 @@ export class OrdersService {
   ): Promise<CreateOrderResult> {
     const existing = await this.findByKey(userId, checkoutKey);
     if (existing) {
-      return { replayed: true, order: this.toResponse(existing) };
+      await this.expirationService?.expireOrder(existing.id, userId);
+      const current = this.expirationService ? await this.findByKey(userId, checkoutKey) : existing;
+      return { replayed: true, order: this.toResponse(current!) };
     }
 
     try {
@@ -142,6 +147,7 @@ export class OrdersService {
       voucherCode: order.voucherCode ?? undefined,
       note: order.note,
       createdAt: order.createdAt,
+      paymentExpiresAt: orderPaymentDeadline(order.createdAt),
       items: order.items.map((item) => ({
         productId: item.productId,
         productName: item.productName,
@@ -155,6 +161,7 @@ export class OrdersService {
   }
   /** Lịch sử đơn của chính user, mới nhất lên đầu. */
   async findMyOrders(userId: string) {
+    // Chỉ đọc lịch sử; tác vụ nền xử lý hết hạn để request không phải chờ từng transaction.
     const orders = await this.prisma.order.findMany({
       where: { userId },
       include: orderWithItems.include,
@@ -165,6 +172,7 @@ export class OrdersService {
 
   /** Chi tiết một đơn. Chỉ chủ đơn xem được; đơn người khác trả 404. */
   async findOneForUser(userId: string, orderId: string) {
+    await this.expirationService?.expireOrder(orderId, userId);
     // Lọc theo cả userId ngay trong truy vấn: đơn của người khác cũng trả 404
     // để không lộ id nào tồn tại. KHÔNG đổi thành findUnique({ id }) rồi so sánh sau.
     const order = await this.prisma.order.findFirst({

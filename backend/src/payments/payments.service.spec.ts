@@ -38,6 +38,7 @@ function mockOrder(over: Record<string, unknown> = {}) {
     orderNumber: 1042,
     userId: USER_ID,
     status: OrderStatus.PENDING,
+    createdAt: new Date(),
     totalAmount: D(58000),
     items: [
       {
@@ -53,6 +54,10 @@ function mockOrder(over: Record<string, unknown> = {}) {
 
 function setupMockService() {
   const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    user: { update: jest.fn().mockResolvedValue({ id: USER_ID, loyaltyPoints: 5 }) },
+    loyaltyTransaction: { create: jest.fn().mockResolvedValue({}) },
+    voucher: { findUnique: jest.fn(), update: jest.fn() },
     product: {
       findUnique: jest.fn().mockImplementation(() =>
         Promise.resolve(mockProduct()),
@@ -60,6 +65,7 @@ function setupMockService() {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     order: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue(mockOrder()),
       update: jest.fn().mockImplementation(({ data }) =>
         Promise.resolve({
           ...mockOrder(),
@@ -68,6 +74,8 @@ function setupMockService() {
       ),
     },
     payment: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       create: jest.fn().mockImplementation(({ data }) =>
         Promise.resolve({
           id: 'pay-001',
@@ -80,6 +88,7 @@ function setupMockService() {
 
   const prisma = {
     payment: {
+      findFirst: jest.fn().mockResolvedValue(null),
       findUnique: jest.fn().mockResolvedValue(null),
       count: jest.fn().mockResolvedValue(0),
     },
@@ -111,6 +120,61 @@ describe('PaymentsService (Task 8 + Task 10.2 & 10.3)', () => {
   };
 
   describe('Thanh toán thành công (Happy Path & Optimistic Locking)', () => {
+    it('không cho mô phỏng thất bại để đổi trạng thái đơn có giao dịch VNPay', async () => {
+      const { service, prisma, tx } = setupMockService();
+      prisma.payment.findFirst.mockResolvedValue({ id: 'pending-vnpay' });
+      await expect(service.processPayment(USER_ID, validKey, { ...validDto, simulateFailure: true })).rejects.toThrow('VNPay');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.order.update).not.toHaveBeenCalled();
+    });
+    it('chặn Mock nếu đơn vẫn có giao dịch VNPay cần đối soát', async () => {
+      const { service, tx } = setupMockService();
+      tx.payment.findFirst.mockResolvedValue({ id: 'pending-vnpay' });
+      await expect(service.processPayment(USER_ID, validKey, validDto)).rejects.toThrow('VNPay');
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+      expect(tx.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('Mock hủy đơn quá 10 phút, không trừ kho hay tạo payment thành công', async () => {
+      const { service, tx } = setupMockService();
+      tx.order.findUniqueOrThrow.mockResolvedValue(mockOrder({ createdAt: new Date(Date.now() - 11 * 60000) }));
+      await expect(service.processPayment(USER_ID, validKey, validDto)).rejects.toThrow('quá hạn');
+      expect(tx.order.update).toHaveBeenCalledWith({ where: { id: ORDER_ID }, data: { status: OrderStatus.CANCELLED } });
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+      expect(tx.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('Mock tăng lượt dùng voucher và cộng điểm ngay trong transaction thanh toán', async () => {
+      const { service, prisma, tx } = setupMockService();
+      tx.order.findUniqueOrThrow.mockResolvedValue(mockOrder({ voucherCode: 'BREW10' }));
+      tx.voucher.findUnique.mockResolvedValue({ id: 'voucher-1', usageLimit: 10, usedCount: 9 });
+
+      await service.processPayment(USER_ID, validKey, validDto);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.voucher.update).toHaveBeenCalledWith({ where: { id: 'voucher-1' }, data: { usedCount: { increment: 1 } } });
+      expect(tx.user.update).toHaveBeenCalledWith({ where: { id: USER_ID }, data: { loyaltyPoints: { increment: 5 } } });
+      expect(tx.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: { userId: USER_ID, orderId: ORDER_ID, points: 5, type: 'EARN' },
+      });
+    });
+
+    it('lỗi cộng điểm làm transaction thất bại, không trả thanh toán thành công', async () => {
+      const { service, tx } = setupMockService();
+      tx.loyaltyTransaction.create.mockRejectedValue(new Error('loyalty write failed'));
+      await expect(service.processPayment(USER_ID, validKey, validDto)).rejects.toThrow('loyalty write failed');
+      expect(tx.order.update).not.toHaveBeenCalled();
+      expect(tx.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('đọc lại dưới khóa thấy đơn đã PAID: không trừ kho/cộng điểm lần nữa', async () => {
+      const { service, tx } = setupMockService();
+      tx.order.findUniqueOrThrow.mockResolvedValue(mockOrder({ status: OrderStatus.PAID }));
+      await expect(service.processPayment(USER_ID, validKey, validDto)).rejects.toThrow(ConflictException);
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+      expect(tx.user.update).not.toHaveBeenCalled();
+    });
+
     it('thanh toán thành công đơn PENDING, trừ kho với version và đổi trạng thái sang PAID', async () => {
       const { service, tx } = setupMockService();
 

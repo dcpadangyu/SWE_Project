@@ -26,6 +26,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentsService } from './payments.service';
+import { PaymentConfiguration } from './payment-configuration';
 
 interface AuthenticatedUser {
   id: string;
@@ -38,7 +39,10 @@ interface AuthenticatedUser {
 @UseGuards(JwtAuthGuard)
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly configuration: PaymentConfiguration,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.OK)
@@ -100,6 +104,8 @@ export class PaymentsController {
     @Body() dto: CreatePaymentDto,
     @Res({ passthrough: true }) res: Response,
   ) {
+    this.configuration.requireProvider('MOCK');
+
     const result = await this.paymentsService.processPayment(
       user.id,
       idempotencyKey,

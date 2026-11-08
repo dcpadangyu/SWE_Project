@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { apiClient } from "@/utils/apiClient";
 import type { Order, OrderStatus } from "@/types/brewlite";
+
+import { authStorage } from "@/utils/authStorage";
+import { useCartStore } from "@/stores/cartStore";
+import { completePaidCheckout } from "@/utils/vnpayCheckout";
+import ResumeVnpayPayment from "@/components/ResumeVnpayPayment";
 
 interface RawOrderItem {
   productId: string;
@@ -27,6 +32,7 @@ interface RawOrderResponse {
   totalAmount: number | string;
   items?: RawOrderItem[];
   createdAt: string;
+  paymentExpiresAt?: string;
   note?: string;
 }
 
@@ -121,13 +127,49 @@ function OrderDetailContent() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(() => Date.now());
+  const refreshOrder = useRef<(() => void) | null>(null);
+  const expiryCheckedFor = useRef<string | null>(null);
+
+  const paymentDeadline = order?.paymentExpiresAt
+    ? Date.parse(order.paymentExpiresAt)
+    : Number.NaN;
+  const remainingSeconds = Number.isFinite(paymentDeadline)
+    ? Math.max(0, Math.ceil((paymentDeadline - now) / 1000))
+    : null;
+
+  useEffect(() => {
+    if (order?.status !== "PENDING" && order?.status !== "PAYMENT_FAILED") return;
+    const tick = () => setNow(Date.now());
+    const timer = setInterval(tick, 1000);
+    window.addEventListener("focus", tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", tick);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [order?.status]);
+
+  useEffect(() => {
+    if (remainingSeconds !== 0 || !order ||
+      (order.status !== "PENDING" && order.status !== "PAYMENT_FAILED") ||
+      expiryCheckedFor.current === order.id) return;
+    expiryCheckedFor.current = order.id;
+    refreshOrder.current?.();
+  }, [remainingSeconds, order]);
 
   useEffect(() => {
     let active = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let refreshCount = 0;
+    const controller = new AbortController();
 
-    async function loadOrder() {
-      setLoading(true);
-      setError("");
+    async function loadOrder(initialLoad = true) {
+      if (initialLoad) {
+        setLoading(true);
+        setError("");
+      }
 
       // 1. Nếu là đơn mẫu thì hiển thị trực tiếp, không gọi API backend gây lỗi UUID
       const mockOrder = MOCK_ORDERS.find((item) => item.id === orderId);
@@ -143,7 +185,11 @@ function OrderDetailContent() {
       try {
         const response = await apiClient.get<
           RawOrderResponse | { data: RawOrderResponse }
-        >(`/orders/${encodeURIComponent(orderId)}`);
+        >(`/orders/${encodeURIComponent(orderId)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+          handledError: true,
+        });
 
         const rawOrder =
           response &&
@@ -175,12 +221,17 @@ function OrderDetailContent() {
 
         if (active) {
           setOrder(normalizedOrder);
+          // Return có thể đến trước IPN. Đọc lại DB, không suy ra PAID từ URL.
+          if (normalizedOrder.status === "PENDING" && refreshCount < 10) {
+            refreshCount += 1;
+            refreshTimer = setTimeout(() => { void loadOrder(false); }, 3000);
+          }
         }
       } catch {
         // Chỉ dùng dữ liệu mẫu cho những ID mẫu đã định nghĩa.
         const mockOrder = MOCK_ORDERS.find((item) => item.id === orderId);
 
-        if (active) {
+        if (active && initialLoad) {
           if (mockOrder) {
             setOrder(mockOrder);
             setError(
@@ -198,12 +249,57 @@ function OrderDetailContent() {
       }
     }
 
-    loadOrder();
+    refreshOrder.current = () => { void loadOrder(false); };
+    void loadOrder();
 
     return () => {
       active = false;
+      clearTimeout(refreshTimer);
+      controller.abort();
+      refreshOrder.current = null;
     };
   }, [orderId]);
+
+  useEffect(() => {
+    if (!order) return;
+
+    const paidStatuses: OrderStatus[] = [
+      "PAID",
+      "PREPARING",
+      "READY",
+      "COMPLETED",
+    ];
+
+    if (!paidStatuses.includes(order.status)) {
+      return;
+    }
+
+    const user = authStorage.getUser() as {
+      id?: string;
+    } | null;
+
+    if (!user?.id) return;
+
+    const userId = user.id;
+    const confirmedOrderId = order.id;
+
+    const complete = () => {
+      try {
+        completePaidCheckout(userId, confirmedOrderId);
+      } catch {
+        // Giữ nguyên giỏ nếu không đọc được lượt checkout.
+        console.error("Không thể hoàn tất dữ liệu checkout local.");
+      }
+    };
+
+    if (useCartStore.persist.hasHydrated()) {
+      complete();
+      return;
+    }
+
+    // Chờ Zustand đọc xong giỏ hàng từ localStorage.
+    return useCartStore.persist.onFinishHydration(complete);
+  }, [order]);
 
   if (loading) {
     return (
@@ -326,6 +422,27 @@ function OrderDetailContent() {
           <p className="mt-2 text-xs text-gray-500">
             {formatDate(order.createdAt)}
           </p>
+          {(isWaiting || isFailed) && remainingSeconds !== null && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <div className={`flex flex-wrap items-center justify-center gap-x-3 gap-y-1 ${remainingSeconds <= 60 ? "text-red-700" : "text-amber-900"}`}>
+                <span className="text-sm font-medium">Thời gian thanh toán còn lại</span>
+                <span
+                  role="timer"
+                  aria-live="off"
+                  aria-label="Thời gian còn lại, phút và giây"
+                  className="text-2xl font-bold tabular-nums"
+                >
+                  {String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:
+                  {String(remainingSeconds % 60).padStart(2, "0")}
+                </span>
+              </div>
+              {remainingSeconds === 0 && (
+                <p role="status" className="mt-2 text-sm text-red-700">
+                  Đã hết thời gian thanh toán. Đang cập nhật trạng thái đơn hàng.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -415,31 +532,8 @@ function OrderDetailContent() {
         )}
       </section>
 
-      {/* Thanh toán thất bại */}
-      {isFailed && (
-        <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
-          <h2 className="font-bold text-red-800">Cần thanh toán lại</h2>
-
-          <p className="mt-2 text-sm text-red-700">
-            Khi cổng thanh toán hỗ trợ thử lại, bạn có thể tiếp tục thanh toán
-            đơn này. Giỏ hàng hiện tại sẽ không bị tự động xóa.
-          </p>
-
-          <button
-            type="button"
-            disabled
-            className="mt-4 w-full cursor-not-allowed rounded-xl bg-gray-300 px-4 py-3 font-semibold text-gray-600"
-          >
-            Thử thanh toán lại (chưa tích hợp API)
-          </button>
-        </section>
-      )}
-
-      {isWaiting && (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Đơn hàng đang chờ thanh toán. Vui lòng kiểm tra trạng thái giao dịch
-          trước khi thử thanh toán lại.
-        </section>
+      {(isFailed || isWaiting) && (
+        <ResumeVnpayPayment orderId={order.id} failed={isFailed} expired={remainingSeconds === 0} />
       )}
 
       <Link

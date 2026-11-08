@@ -166,6 +166,24 @@ describe('OrdersService.create', () => {
 describe('OrdersService.findMyOrders', () => {
   const OTHER_USER = 'u0000000-0000-4000-8000-000000000002';
 
+  it('đọc 50 đơn quá hạn mà không gọi quét hoặc mở transaction hủy đơn', async () => {
+    const { prisma } = makeService();
+    const expiration = { expireDueOrders: jest.fn(), expireOrder: jest.fn() };
+    const service = new OrdersService(prisma as never, undefined, expiration as never);
+    prisma.order.findMany.mockResolvedValue(Array.from({ length: 50 }, (_, i) =>
+      storedOrder({ id: `order-${i}`, orderNumber: 1000 + i }),
+    ));
+
+    const result = await service.findMyOrders(USER);
+
+    expect(result).toHaveLength(50);
+    expect(result.every(order => order.status === 'PENDING')).toBe(true);
+    expect(expiration.expireDueOrders).not.toHaveBeenCalled();
+    expect(expiration.expireOrder).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.order.findMany).toHaveBeenCalledTimes(1);
+  });
+
   it('chỉ lọc đơn theo userId của người gọi', async () => {
     const { service, prisma } = makeService();
     prisma.order.findMany.mockResolvedValue([storedOrder()]);
@@ -237,6 +255,21 @@ describe('OrdersService.findMyOrders', () => {
 
 describe('OrdersService.findOneForUser', () => {
   const OTHER_USER = 'u0000000-0000-4000-8000-000000000002';
+
+  it('vẫn xử lý hết hạn trước khi đọc chi tiết, trả trạng thái CANCELLED mới nhất', async () => {
+    const { prisma } = makeService();
+    prisma.order.findFirst.mockResolvedValue(storedOrder());
+    const expiration = { expireOrder: jest.fn().mockImplementation(async () => {
+      prisma.order.findFirst.mockResolvedValue(storedOrder({ status: 'CANCELLED' }));
+      return true;
+    }) };
+    const service = new OrdersService(prisma as never, undefined, expiration as never);
+
+    const result = await service.findOneForUser(USER, 'order-1');
+
+    expect(expiration.expireOrder).toHaveBeenCalledWith('order-1', USER);
+    expect(result.status).toBe('CANCELLED');
+  });
 
   it('chủ đơn xem được chi tiết kèm items', async () => {
     const { service, prisma } = makeService();
