@@ -7,12 +7,15 @@ export async function startPayment(
   orderId: string,
   key: string,
   saveKey: (key: string) => void,
+  simulateFailure = false,
 ) {
   if (provider === 'VNPAY') return startVnpayPayment(orderId, key, saveKey);
   if (provider !== 'MOCK') throw new Error('Chế độ thanh toán không hợp lệ.');
   try {
     const result = await apiClient.post<{ orderId: string; status: string }>('/payments', {
-      orderId, paymentMethod: 'BANK_CARD',
+      orderId,
+      paymentMethod: 'BANK_CARD',
+      simulateFailure,
     }, { headers: { 'Idempotency-Key': key }, handledError: true });
     if (result.orderId !== orderId || !['PAID', 'PREPARING', 'READY', 'COMPLETED'].includes(result.status)) {
       throw new Error('Chưa xác nhận thanh toán. Hãy kiểm tra trạng thái đơn hàng.');

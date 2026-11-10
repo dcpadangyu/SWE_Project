@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CartItem } from "@/types/brewlite";
-import { apiClient } from "@/utils/apiClient";
+import { apiClient, ApiError } from "@/utils/apiClient";
 import { startPayment } from "@/utils/startPayment";
 import { usePaymentProvider } from "@/hooks/usePaymentProvider";
 
@@ -78,6 +78,7 @@ export default function CheckoutModal({
     totalAmount,
   });
   const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
+  const [simulateFailure, setSimulateFailure] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -248,6 +249,7 @@ export default function CheckoutModal({
           checkout.paymentKey = key;
           savePendingCheckout(checkout);
         },
+        simulateFailure,
       );
       if (destination.kind === "order") {
         router.push(`/orders/${encodeURIComponent(destination.orderId)}`);
@@ -257,11 +259,22 @@ export default function CheckoutModal({
       // Chưa xóa giỏ, chưa coi là thanh toán thành công.
       window.location.assign(destination.url);
     } catch (submitError: unknown) {
-      setError(
+      const message =
         submitError instanceof Error
           ? submitError.message
-          : "Không thể bắt đầu thanh toán. Vui lòng thử lại.",
-      );
+          : "Không thể bắt đầu thanh toán. Vui lòng thử lại.";
+      setError(message);
+
+      // Nếu lỗi từ chối thanh toán (402 PAYMENT_FAILED) và đã có orderId, điều hướng sau 1.2s để xem trạng thái đơn
+      if (submitError instanceof ApiError && submitError.status === 402) {
+        const currentUserId = authStorage.getUser()?.id;
+        const savedPending = currentUserId ? readPendingCheckout(currentUserId) : null;
+        if (savedPending?.orderId) {
+          setTimeout(() => {
+            router.push(`/orders/${encodeURIComponent(savedPending.orderId!)}`);
+          }, 1200);
+        }
+      }
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
@@ -345,6 +358,18 @@ export default function CheckoutModal({
                   ? "Bạn sẽ được chuyển đến VNPay để chọn phương thức và xác nhận thanh toán."
                   : "Vui lòng chờ trước khi xác nhận đặt đơn.")}
             </p>
+
+            {provider === "MOCK" && (
+              <label className="mt-2.5 flex items-center gap-2 cursor-pointer border-t border-amber-200/60 pt-2 text-xs font-medium text-amber-950">
+                <input
+                  type="checkbox"
+                  checked={simulateFailure}
+                  onChange={(e) => setSimulateFailure(e.target.checked)}
+                  className="h-4 w-4 rounded border-amber-300 text-amber-800 focus:ring-amber-500"
+                />
+                <span>Mô phỏng thanh toán thất bại (simulateFailure để kiểm thử Task 8)</span>
+              </label>
+            )}
           </div>
 
           <div>
