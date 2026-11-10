@@ -8,6 +8,7 @@ import { OrdersModule } from './orders/orders.module';
 import { AuthModule } from './auth/auth.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { InventoryModule } from './inventory/inventory.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -19,6 +20,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AuthModule,
     PaymentsModule,
     PromotionsModule,
+    InventoryModule,
     ObserveModule.forRoot({
       appKey: process.env.OBSERVE_APP_KEY || 'YOUR_APP_KEY',
       appSecret: process.env.OBSERVE_APP_SECRET || 'YOUR_APP_SECRET',
