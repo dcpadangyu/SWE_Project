@@ -15,8 +15,11 @@ describe('PromotionsService', () => {
   const mockPrismaService: any = {
     voucher: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
     },
     user: {
+      findUnique: jest.fn(),
       update: jest.fn(),
     },
     loyaltyTransaction: {
@@ -52,6 +55,9 @@ describe('PromotionsService', () => {
 
     service = module.get<PromotionsService>(PromotionsService);
     jest.clearAllMocks();
+    mockPrismaService.$transaction.mockImplementation((callback: any) =>
+      callback(mockPrismaService),
+    );
   });
 
   describe('applyVoucher', () => {
@@ -161,6 +167,128 @@ describe('PromotionsService', () => {
       expect(mockPrismaService.loyaltyTransaction.create).toHaveBeenCalled();
       expect(result.pointsAdded).toBe(6);
       expect(result.loyaltyPoints).toBe(16);
+    });
+  });
+
+  describe('getAvailableVouchers', () => {
+    it('Lấy danh sách voucher còn hiệu lực và loại bỏ voucher đã hết lượt dùng', async () => {
+      const activeVouchers = [
+        {
+          id: 'v-1',
+          code: 'SALE10',
+          isActive: true,
+          endDate: new Date(Date.now() + 86400000),
+          usageLimit: 10,
+          usedCount: 2,
+        },
+        {
+          id: 'v-2',
+          code: 'UNLIMITED',
+          isActive: true,
+          endDate: null,
+          usageLimit: null,
+          usedCount: 50,
+        },
+        {
+          id: 'v-3',
+          code: 'EXHAUSTED',
+          isActive: true,
+          endDate: new Date(Date.now() + 86400000),
+          usageLimit: 5,
+          usedCount: 5, // Đã hết lượt dùng
+        },
+      ];
+
+      mockPrismaService.voucher.findMany.mockResolvedValue(activeVouchers);
+
+      const result = await service.getAvailableVouchers();
+
+      expect(mockPrismaService.voucher.findMany).toHaveBeenCalled();
+      expect(result).toHaveLength(2);
+      expect(result.map((v: any) => v.code)).toEqual(['SALE10', 'UNLIMITED']);
+    });
+  });
+
+  describe('redeemPoints', () => {
+    it('Đổi điểm thành công: trừ điểm, tạo LoyaltyTransaction REDEEM, tạo Voucher và trả về kết quả', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        loyaltyPoints: 30,
+      });
+      mockPrismaService.user.update.mockResolvedValue({
+        id: 'user-1',
+        loyaltyPoints: 20,
+      });
+      mockPrismaService.loyaltyTransaction.create.mockResolvedValue({
+        id: 'tx-redeem-1',
+        userId: 'user-1',
+        points: 10,
+        type: 'REDEEM',
+      });
+      mockPrismaService.voucher.create.mockResolvedValue({
+        id: 'voucher-created-1',
+      });
+
+      const result = await service.redeemPoints('user-1', 'REWARD10K');
+
+      expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+      });
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { loyaltyPoints: { decrement: 10 } },
+      });
+      expect(mockPrismaService.loyaltyTransaction.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'user-1',
+          points: 10,
+          type: 'REDEEM',
+        },
+      });
+      expect(mockPrismaService.voucher.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            discountType: 'FIXED_AMOUNT',
+            discountValue: 10000,
+            minOrderValue: 20000,
+            usageLimit: 1,
+            usedCount: 0,
+            isActive: true,
+          }),
+        }),
+      );
+      expect(result.success).toBe(true);
+      expect(result.message).toBe('Đổi điểm thành công!');
+      expect(result.discountValue).toBe(10000);
+      expect(result.remainingPoints).toBe(20);
+      expect(result.code).toMatch(/^LP10K-/);
+    });
+
+    it('Báo lỗi BadRequestException khi số điểm của user không đủ', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        loyaltyPoints: 5, // Cần 10 điểm cho REWARD10K
+      });
+
+      await expect(
+        service.redeemPoints('user-1', 'REWARD10K'),
+      ).rejects.toThrow(
+        new BadRequestException('Bạn cần tối thiểu 10 điểm để đổi mã này.'),
+      );
+    });
+
+    it('Báo lỗi BadRequestException khi gói đổi điểm không hợp lệ', async () => {
+      await expect(
+        service.redeemPoints('user-1', 'INVALID_REWARD'),
+      ).rejects.toThrow(new BadRequestException('Gói đổi điểm không hợp lệ.'));
+    });
+
+    it('Báo lỗi NotFoundException khi không tìm thấy người dùng', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.redeemPoints('non-existent-user', 'REWARD10K'),
+      ).rejects.toThrow(new NotFoundException('Người dùng không tồn tại.'));
     });
   });
 });
