@@ -16,19 +16,28 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
+const MAX_QUANTITY = 99;
+
 export default function CartItem({
   item,
   onRemove,
   onUpdateQuantity,
 }: CartItemProps) {
+  const [prevQuantity, setPrevQuantity] = useState(item.quantity);
   const [quantityInput, setQuantityInput] = useState(String(item.quantity));
+
+  if (item.quantity !== prevQuantity) {
+    setPrevQuantity(item.quantity);
+    setQuantityInput(String(item.quantity));
+  }
 
   const commitQuantity = () => {
     const quantity = Number(quantityInput);
 
     if (Number.isInteger(quantity) && quantity > 0) {
-      onUpdateQuantity(item.id, quantity);
-      setQuantityInput(String(quantity));
+      const clamped = Math.min(MAX_QUANTITY, quantity);
+      onUpdateQuantity(item.id, clamped);
+      setQuantityInput(String(clamped));
       return;
     }
 
@@ -36,8 +45,9 @@ export default function CartItem({
   };
 
   const changeQuantity = (quantity: number) => {
-    onUpdateQuantity(item.id, quantity);
-    setQuantityInput(String(quantity));
+    const clamped = Math.min(MAX_QUANTITY, Math.max(1, quantity));
+    onUpdateQuantity(item.id, clamped);
+    setQuantityInput(String(clamped));
   };
 
   return (
@@ -105,7 +115,8 @@ export default function CartItem({
               <button
                 type="button"
                 onClick={() => changeQuantity(item.quantity + 1)}
-                className="px-3 py-1 text-lg text-slate-700 hover:bg-slate-100"
+                disabled={item.quantity >= MAX_QUANTITY}
+                className="px-3 py-1 text-lg text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label={`Tăng số lượng ${item.productName}`}
               >
                 +
