@@ -38,5 +38,5 @@ COPY --from=builder /app/dist ./dist
 # Mở cổng API 8080
 EXPOSE 8080
 
-# Áp dụng các migration chưa chạy và khởi động ứng dụng (theo ADR-002)
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+# Áp dụng migration, tự động nạp seed nếu CSDL mới tinh, và khởi động ứng dụng
+CMD ["sh", "-c", "npx prisma migrate deploy && node -e \"const { PrismaClient } = require('@prisma/client'); const p = new PrismaClient(); p.product.count().then(async (c) => { if (c === 0) { console.log('[Docker] CSDL trống, tự động nạp dữ liệu mẫu seed.ts...'); require('child_process').execSync('npm run prisma:seed', { stdio: 'inherit' }); } await p.\\$disconnect(); }).catch(e => console.error(e));\" && node dist/main"]
