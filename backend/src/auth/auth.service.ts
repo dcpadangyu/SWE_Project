@@ -137,4 +137,34 @@ export class AuthService {
 
     return user;
   }
+
+  /**
+   * Cập nhật thông tin hồ sơ người dùng (họ và tên)
+   */
+  async updateProfile(userId: string, dto: { fullName?: string }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy thông tin người dùng.');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.fullName !== undefined ? { fullName: dto.fullName?.trim() || null } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        loyaltyPoints: true,
+        createdAt: true,
+      },
+    });
+
+    return updated;
+  }
 }

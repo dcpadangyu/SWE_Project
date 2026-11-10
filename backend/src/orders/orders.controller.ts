@@ -16,6 +16,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
@@ -24,12 +25,16 @@ import {
   ApiParam,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { CancelOrderDto } from './dto/cancel-order.dto';
 import { OrdersService } from './orders.service';
 
 interface AuthenticatedUser {
@@ -187,6 +192,20 @@ export class OrdersController {
     return this.ordersService.findMyOrders(user.id);
   }
 
+  @Get('staff/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BARISTA, Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Lấy toàn bộ đơn hàng cho Staff (Barista/Admin)',
+  })
+  @ApiForbiddenResponse({
+    description: 'Chỉ nhân viên (BARISTA/ADMIN) mới có quyền truy cập.',
+  })
+  findStaffOrders() {
+    return this.ordersService.findStaffOrders();
+  }
+
   @Get(':id')
   @ApiOperation({
     summary: 'Chi tiết một đơn hàng của tôi, kèm items và topping',
@@ -225,6 +244,9 @@ export class OrdersController {
   }
 
   @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BARISTA, Role.ADMIN)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Cập nhật trạng thái đơn hàng (Dành cho Barista / Quản lý - Task 10.1)',
   })
@@ -232,6 +254,9 @@ export class OrdersController {
   @ApiOkResponse({
     description: 'Đơn hàng được chuyển trạng thái thành công theo State Machine.',
     schema: { example: Order_Example },
+  })
+  @ApiForbiddenResponse({
+    description: 'Chỉ nhân viên (BARISTA/ADMIN) mới có quyền thực hiện.',
   })
   @ApiBadRequestResponse({
     description: 'id không phải UUID hoặc trạng thái mới không hợp lệ.',
@@ -250,5 +275,37 @@ export class OrdersController {
     @Body() dto: UpdateOrderStatusDto,
   ) {
     return this.ordersService.updateStatus(id, dto.status);
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Khách hàng yêu cầu hủy đơn (PENDING -> hủy ngay, PAID -> gửi yêu cầu hoàn tiền cho Staff, PREPARING/READY/COMPLETED -> chặn)',
+  })
+  cancelOrder(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: CancelOrderDto,
+  ) {
+    return this.ordersService.cancelOrder(user.id, id, dto?.reason);
+  }
+
+  @Post(':id/approve-refund')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BARISTA, Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Nhân viên chấp nhận duyệt hoàn tiền cho đơn hàng',
+  })
+  @ApiForbiddenResponse({
+    description: 'Chỉ nhân viên (BARISTA/ADMIN) mới có quyền thực hiện.',
+  })
+  approveRefund(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.ordersService.approveRefund(id, user.email);
   }
 }

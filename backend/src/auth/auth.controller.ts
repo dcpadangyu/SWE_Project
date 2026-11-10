@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -21,6 +22,7 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 
@@ -101,5 +103,19 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Chưa đăng nhập hoặc JWT token không hợp lệ / hết hạn.' })
   async getProfile(@CurrentUser() user: { id: string }) {
     return this.authService.getProfile(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('profile')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật thông tin hồ sơ người dùng (họ và tên)' })
+  @ApiOkResponse({
+    description: 'Cập nhật hồ sơ thành công.',
+  })
+  async updateProfile(
+    @CurrentUser() user: { id: string },
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(user.id, dto);
   }
 }

@@ -1,32 +1,78 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Reflector } from '@nestjs/core';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Role } from '@prisma/client';
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 
 describe('OrdersController', () => {
   let controller: OrdersController;
+  let reflector: Reflector;
   let service: {
     create: jest.Mock;
     findMyOrders: jest.Mock;
+    findStaffOrders: jest.Mock;
     findOneForUser: jest.Mock;
     updateStatus: jest.Mock;
+    approveRefund: jest.Mock;
   };
 
   beforeEach(async () => {
+    reflector = new Reflector();
     service = {
       create: jest.fn(),
       findMyOrders: jest.fn(),
+      findStaffOrders: jest.fn(),
       findOneForUser: jest.fn(),
       updateStatus: jest.fn(),
+      approveRefund: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrdersController],
-      providers: [{ provide: OrdersService, useValue: service }],
+      providers: [
+        { provide: OrdersService, useValue: service },
+        { provide: Reflector, useValue: reflector },
+      ],
     }).compile();
 
     controller = module.get<OrdersController>(OrdersController);
+  });
+
+  describe('RBAC Role Authorization', () => {
+    it('PATCH :id/status phải yêu cầu role BARISTA hoặc ADMIN', () => {
+      const roles = reflector.get<Role[]>(
+        ROLES_KEY,
+        OrdersController.prototype.updateStatus,
+      );
+      expect(roles).toBeDefined();
+      expect(roles).toContain(Role.BARISTA);
+      expect(roles).toContain(Role.ADMIN);
+      expect(roles).not.toContain(Role.CUSTOMER);
+    });
+
+    it('GET staff/all phải yêu cầu role BARISTA hoặc ADMIN', () => {
+      const roles = reflector.get<Role[]>(
+        ROLES_KEY,
+        OrdersController.prototype.findStaffOrders,
+      );
+      expect(roles).toBeDefined();
+      expect(roles).toContain(Role.BARISTA);
+      expect(roles).toContain(Role.ADMIN);
+      expect(roles).not.toContain(Role.CUSTOMER);
+    });
+
+    it('POST :id/approve-refund phải yêu cầu role BARISTA hoặc ADMIN', () => {
+      const roles = reflector.get<Role[]>(
+        ROLES_KEY,
+        OrdersController.prototype.approveRefund,
+      );
+      expect(roles).toBeDefined();
+      expect(roles).toContain(Role.BARISTA);
+      expect(roles).toContain(Role.ADMIN);
+      expect(roles).not.toContain(Role.CUSTOMER);
+    });
   });
 
   describe('PATCH :id/status (Task 10.1 Order State Machine)', () => {
