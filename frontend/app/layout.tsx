@@ -4,10 +4,11 @@
  * ============================================================================
  * 
  * Mục đích:
- * - Thiết lập cấu trúc giao diện Mobile-first bám sát Wireframe Mục 7.
- * - Khung hiển thị trung tâm mô phỏng màn hình điện thoại (max-w-md, shadow-2xl)
- *   giúp ứng dụng hiển thị hoàn hảo trên cả điện thoại thực tế lẫn màn hình máy tính.
- * - Tích hợp Header (Logo + Cart Badge) và Bottom Navigation (4 tabs).
+ * - Responsive toàn diện:
+ *   + Trên máy tính (Desktop >= md): Full màn hình 100% chiều rộng, Header tràn viền (edge-to-edge),
+ *     nội dung co giãn thoáng đãng trên nền sáng trang nhã, tự động ẩn thanh điều hướng dưới đáy.
+ *   + Trên điện thoại (Mobile < md): Giữ nguyên chuẩn Mobile-first (max-w-md),
+ *     có thanh Bottom Navigation cố định dưới đáy.
  */
 
 import React, { Suspense } from 'react';
@@ -16,6 +17,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
 import BottomNav from '@/components/BottomNav';
+import StaffRoleGuard from '@/components/StaffRoleGuard';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -52,20 +54,26 @@ export default function RootLayout({
       lang="vi"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-slate-100 text-slate-800 flex justify-center selection:bg-amber-500 selection:text-white">
-        {/* KHUNG MÀN HÌNH DI ĐỘNG (MOBILE-FIRST CONTAINER) */}
-        <div className="w-full max-w-md min-h-screen bg-white shadow-2xl flex flex-col relative pb-16">
-          {/* Header trên cùng (Logo & Cart Badge) */}
-          <Header />
+      <body className="min-h-full bg-slate-100 text-slate-800 flex flex-col selection:bg-amber-500 selection:text-white antialiased">
+        {/* Bộ phân quyền tự động chuyển hướng Staff về /staff */}
+        <Suspense fallback={null}>
+          <StaffRoleGuard />
+        </Suspense>
 
-          {/* Nội dung trang con (Menu, Giỏ hàng, Chi tiết món...) */}
-          <main className="flex-1 p-4 overflow-y-auto">{children}</main>
+        {/* Header trên cùng (Full width 100% mép tới mép trên Desktop) */}
+        <Header />
 
-          {/* Thanh điều hướng dưới đáy (Menu, Cart, Orders, Profile) */}
-          <Suspense fallback={null}>
-            <BottomNav />
-          </Suspense>
-        </div>
+        {/* Nội dung trang con (Mobile: max-w-md mx-auto; Desktop: full width rộng rãi) */}
+        <main className="flex-1 w-full flex flex-col bg-slate-100">
+          <div className="w-full max-w-md md:max-w-none md:px-8 lg:px-12 mx-auto p-4 md:py-6 flex-1 pb-20 md:pb-10 transition-all">
+            {children}
+          </div>
+        </main>
+
+        {/* Thanh điều hướng dưới đáy (Chỉ hiển thị trên Mobile: md:hidden) */}
+        <Suspense fallback={null}>
+          <BottomNav />
+        </Suspense>
       </body>
     </html>
   );

@@ -30,6 +30,11 @@ function LoginForm() {
 
   useEffect(() => {
     if (authStorage.getToken()) {
+      const user = authStorage.getUser();
+      if (user?.role === "BARISTA") {
+        router.replace("/staff");
+        return;
+      }
       const destination =
         redirectUrl && redirectUrl !== "/" ? redirectUrl : "/UserProfile";
       router.replace(destination);
@@ -48,6 +53,13 @@ function LoginForm() {
       });
 
       authStorage.setSession(response.accessToken, response.user);
+
+      // Nếu là Staff (BARISTA) -> Vào thẳng /staff
+      if (response.user.role === "BARISTA") {
+        router.push("/staff");
+        return;
+      }
+
       const destination =
         redirectUrl && redirectUrl !== "/" ? redirectUrl : "/UserProfile";
       router.push(destination);
