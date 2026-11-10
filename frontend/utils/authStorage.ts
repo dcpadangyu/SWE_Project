@@ -14,6 +14,12 @@ export const authStorage = {
     window.dispatchEvent(new Event('auth_updated'));
   },
 
+  setUser(user: unknown) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    window.dispatchEvent(new Event('auth_updated'));
+  },
+
   clearSession() {
     if (typeof window === 'undefined') return;
     localStorage.removeItem(TOKEN_KEY);

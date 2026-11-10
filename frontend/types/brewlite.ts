@@ -155,6 +155,18 @@ export interface OrderDetail {
 }
 
 /**
+ * Yêu cầu hoàn tiền khi hủy đơn PAID (RefundRequest)
+ */
+export interface RefundRequestInfo {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  amount: number | string;
+  reason?: string;
+  processedBy?: string | null;
+  processedAt?: string | null;
+}
+
+/**
  * Thực thể Đơn hàng lưu trữ trong Cơ sở dữ liệu (FR-12, FR-14)
  */
 export interface Order {
@@ -172,6 +184,7 @@ export interface Order {
   createdAt: string;      // Thời điểm đặt đơn
   paymentExpiresAt?: string; // Hạn thanh toán do backend cung cấp (ISO 8601)
   updatedAt?: string;     // Thời điểm cập nhật đơn gần nhất
+  refundRequest?: RefundRequestInfo | null;
 }
 
 // ============================================================================
@@ -192,7 +205,30 @@ export interface User {
 }
 
 // ============================================================================
-// 6. MÔ HÌNH GIAO DỊCH THANH TOÁN (PAYMENT TRANSACTION)
+// 6. MÔ HÌNH NGUYÊN LIỆU & CÔNG THỨC (INVENTORY & RECIPES)
+// ============================================================================
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: string;
+  stock: number;
+  minThreshold: number;
+  status: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'IN_STOCK';
+}
+
+export interface RecipeItem {
+  id: string;
+  productId: string;
+  ingredientId: string;
+  size: Size;
+  amount: number;
+  product?: { id: string; name: string; stock: number; isAvailable: boolean };
+  ingredient?: { id: string; name: string; unit: string; stock: number };
+}
+
+// ============================================================================
+// 7. MÔ HÌNH GIAO DỊCH THANH TOÁN (PAYMENT TRANSACTION)
 // ============================================================================
 
 /**
@@ -219,7 +255,7 @@ export interface Payment {
 }
 
 // ============================================================================
-// 7. MÔ HÌNH VOUCHER KHUYẾN MÃI (PROMOTION / VOUCHER)
+// 8. MÔ HÌNH VOUCHER KHUYẾN MÃI (PROMOTION / VOUCHER)
 // ============================================================================
 
 /**
@@ -239,9 +275,28 @@ export interface Voucher {
   isActive: boolean;          // Trạng thái kích hoạt của voucher
 }
 
-// ============================================================================
-// 8. CÁC ĐỐI TƯỢNG TRUYỀN TẢI DỮ LIỆU API (DATA TRANSFER OBJECTS - DTO)
-// ============================================================================
+// 10. LỊCH SỬ BIẾN ĐỘNG KHO NGUYÊN LIỆU (AUDIT LOG)
+export type IngredientLogAction =
+  | 'CREATE'
+  | 'RESTOCK'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'ORDER_DEDUCT';
+
+export interface IngredientAuditLog {
+  id: string;
+  ingredientId?: string | null;
+  ingredientName: string;
+  action: IngredientLogAction;
+  changeAmount: number;
+  previousStock?: number | null;
+  newStock?: number | null;
+  unit: string;
+  reason?: string | null;
+  performedBy: string;
+  createdAt: string;
+}
+
 
 /**
  * DTO một món khi gửi yêu cầu tạo đơn hàng lên Backend

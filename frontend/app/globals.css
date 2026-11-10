@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f1f5f9;
+  --foreground: #1c1917;
 }
 
 @theme inline {
@@ -12,15 +12,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* 
+ * BrewLite Theme Configuration:
+ * Ứng dụng BrewLite tuân theo bảng màu Cà phê hiện đại (Amber, Stone, White, Slate).
+ * Giữ màu nền sáng trang nhã nhất quán (#f1f5f9 / bg-slate-100) trên mọi thiết bị và trình duyệt,
+ * loại bỏ hoàn toàn việc chế độ Dark Mode của hệ điều hành làm đen nền trang web.
+ */
 body {
-  background: var(--background);
+  background-color: #f1f5f9 !important;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }

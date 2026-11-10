@@ -36,10 +36,13 @@ export default function BottomNav() {
   const displayCount = mounted ? cartCount : 0;
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isStaff, setIsStaff] = useState(false);
 
   useEffect(() => {
     const checkAuth = () => {
       setIsLoggedIn(Boolean(authStorage.getToken()));
+      const user = authStorage.getUser();
+      setIsStaff(user?.role === "BARISTA" || user?.role === "ADMIN");
     };
     checkAuth();
     window.addEventListener("auth_updated", checkAuth);
@@ -137,8 +140,13 @@ export default function BottomNav() {
     },
   ];
 
+  // Nếu là Staff (BARISTA), ẩn hoàn toàn thanh điều hướng khách hàng
+  if (isStaff) {
+    return null;
+  }
+
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 mx-auto max-w-md border-t border-slate-200 bg-white/95 backdrop-blur shadow-lg">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 mx-auto max-w-md border-t border-slate-200 bg-white/95 backdrop-blur shadow-lg md:hidden">
       <div className="grid grid-cols-4 py-1.5">
         {navTabs.map((tab) => {
           const isActive =

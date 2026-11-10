@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Product } from "../types/brewlite";
 import { ProductGrid } from "../components/ProductGrid";
+import PromoBannerSlider from "@/components/PromoBannerSlider";
 import { apiClient } from "../utils/apiClient";
 import { MOCK_PRODUCTS } from "../utils/mockProducts";
 
@@ -81,18 +82,8 @@ export default function Home() {
 
   return (
     <div className="space-y-6 pb-24">
-      {/* BANNER CHÀO MỪNG */}
-      <div className="rounded-2xl bg-gradient-to-r from-amber-800 to-amber-950 p-5 text-white shadow-md">
-        <span className="inline-block rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-300">
-          Cà phê không dùng tiền mặt ✨
-        </span>
-        <h2 className="mt-2 text-xl font-black tracking-tight">
-          BrewLite — Cà phê không tiền mặt
-        </h2>
-        <p className="mt-1 text-xs text-amber-200">
-          Đặt món &amp; thanh toán trực tuyến chỉ trong vài chạm, nhận nước nhanh tại quầy không cần xếp hàng!
-        </p>
-      </div>
+      {/* BANNER KHUYẾN MÃI CAROUSEL */}
+      <PromoBannerSlider />
 
       {/* CẢNH BÁO KẾT NỐI API (ERROR/WARNING STATE) */}
       {error && (

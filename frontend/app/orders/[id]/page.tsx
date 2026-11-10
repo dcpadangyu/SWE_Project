@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState, Suspense } from "react";
 import { apiClient } from "@/utils/apiClient";
-import type { Order, OrderStatus } from "@/types/brewlite";
+import type { Order, OrderStatus, RefundRequestInfo } from "@/types/brewlite";
 
 import { authStorage } from "@/utils/authStorage";
 import { useCartStore } from "@/stores/cartStore";
@@ -34,6 +34,7 @@ interface RawOrderResponse {
   createdAt: string;
   paymentExpiresAt?: string;
   note?: string;
+  refundRequest?: RefundRequestInfo | null;
 }
 
 const MOCK_ORDERS: Order[] = [
@@ -130,6 +131,38 @@ function OrderDetailContent() {
   const [now, setNow] = useState(() => Date.now());
   const refreshOrder = useRef<(() => void) | null>(null);
   const expiryCheckedFor = useRef<string | null>(null);
+
+  // Trạng thái hủy đơn / yêu cầu hoàn tiền
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelSuccess, setCancelSuccess] = useState<string | null>(null);
+
+  const handleCancelOrder = async () => {
+    if (!order) return;
+    setIsCancelling(true);
+    setCancelError(null);
+    setCancelSuccess(null);
+    try {
+      const res = await apiClient.post<{ message: string; order?: Order; refundRequest?: RefundRequestInfo }>(
+        `/orders/${order.id}/cancel`,
+        { reason: cancelReason.trim() || undefined }
+      );
+      setIsCancelModalOpen(false);
+      setCancelReason("");
+      setCancelSuccess(res?.message || "Đã xử lý yêu cầu thành công!");
+      refreshOrder.current?.();
+    } catch (err: unknown) {
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : "Không thể thực hiện yêu cầu hủy đơn lúc này.";
+      setCancelError(errMsg);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   const paymentDeadline = order?.paymentExpiresAt
     ? Date.parse(order.paymentExpiresAt)
@@ -531,6 +564,178 @@ function OrderDetailContent() {
           </div>
         )}
       </section>
+
+      {/* THÔNG BÁO KẾT QUẢ HỦY ĐƠN / HOÀN TIỀN */}
+      {cancelSuccess && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <div className="flex items-center space-x-2">
+            <span className="font-bold">✓</span>
+            <span>{cancelSuccess}</span>
+          </div>
+        </div>
+      )}
+
+      {cancelError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="flex items-center space-x-2">
+            <span className="font-bold">!</span>
+            <span>{cancelError}</span>
+          </div>
+        </div>
+      )}
+
+      {/* KHU VỰC QUẢN LÝ HỦY ĐƠN VÀ HOÀN TIỀN */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <h3 className="font-bold text-gray-900">Quản lý đơn hàng</h3>
+
+        {/* 1. Nếu đơn PENDING hoặc PAYMENT_FAILED: Nút hủy đơn ngay lập tức */}
+        {(order.status === "PENDING" || order.status === "PAYMENT_FAILED") && (
+          <div className="mt-3">
+            <p className="text-xs text-gray-500 mb-3">
+              Đơn hàng chưa hoàn tất thanh toán. Bạn có thể hủy đơn nếu muốn đổi món khác.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsCancelModalOpen(true)}
+              className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+            >
+              Hủy đơn hàng này
+            </button>
+          </div>
+        )}
+
+        {/* 2. Nếu đơn PAID: Xử lý yêu cầu hoàn tiền */}
+        {order.status === "PAID" && (
+          <div className="mt-3">
+            {order.refundRequest?.status === "PENDING" ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <div className="flex items-start space-x-2">
+                  <span className="text-lg">⏳</span>
+                  <div>
+                    <p className="font-semibold text-amber-900">
+                      Yêu cầu hoàn tiền đang chờ quầy Staff duyệt xử lý
+                    </p>
+                    <p className="mt-1 text-xs text-amber-700">
+                      Số tiền dự kiến hoàn: {formatMoney(Number(order.refundRequest.amount))}
+                      {order.refundRequest.reason && ` • Lý do: "${order.refundRequest.reason}"`}
+                    </p>
+                    <p className="mt-2 text-[11px] text-amber-800/80">
+                      Nhân viên tại quầy sẽ kiểm tra và xác nhận hoàn tiền cho bạn sớm nhất có thể.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : order.refundRequest?.status === "APPROVED" ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                <p className="font-semibold text-emerald-900">✓ Yêu cầu hoàn tiền đã được chấp thuận</p>
+                <p className="mt-1 text-xs text-emerald-700">
+                  Số tiền {formatMoney(Number(order.refundRequest.amount))} đã được ghi nhận hoàn trả.
+                </p>
+              </div>
+            ) : order.refundRequest?.status === "REJECTED" ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-semibold text-red-900">✕ Yêu cầu hoàn tiền không được chấp thuận</p>
+                <p className="mt-1 text-xs text-red-700">
+                  Vui lòng liên hệ trực tiếp nhân viên tại quầy để được hỗ trợ.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Đơn hàng đã thanh toán. Nếu có sự cố ngoài ý muốn, bạn có thể gửi yêu cầu hủy và hoàn tiền đến nhân viên quầy.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsCancelModalOpen(true)}
+                  className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                >
+                  Yêu cầu hủy đơn & Hoàn tiền
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. Nếu đơn PREPARING, READY, COMPLETED: Chặn hủy và giải thích rõ */}
+        {(order.status === "PREPARING" || order.status === "READY" || order.status === "COMPLETED") && (
+          <div className="mt-3 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+            <div className="flex items-start space-x-2">
+              <span className="text-base text-gray-500">ℹ️</span>
+              <div>
+                <p className="font-medium text-gray-800">
+                  {order.status === "COMPLETED"
+                    ? "Đơn hàng đã hoàn tất giao nước."
+                    : "Đồ uống đang được thực hiện hoặc đã sẵn sàng."}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Theo quy định của quán, không thể hủy đơn khi quầy Barista đã bắt đầu pha chế hoặc đã làm xong nước.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. Nếu đơn CANCELLED */}
+        {order.status === "CANCELLED" && (
+          <div className="mt-3 rounded-xl bg-red-50 p-4 text-sm text-red-800">
+            <p className="font-medium">Đơn hàng này đã bị hủy.</p>
+          </div>
+        )}
+      </section>
+
+      {/* POPUP MODAL XÁC NHẬN HỦY / HOÀN TIỀN */}
+      {isCancelModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900">
+              {order.status === "PAID"
+                ? "Gửi yêu cầu hủy đơn & hoàn tiền"
+                : "Xác nhận hủy đơn hàng"}
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {order.status === "PAID"
+                ? "Đơn hàng của bạn đã thanh toán. Yêu cầu hoàn tiền sẽ được gửi tới nhân viên tại quầy xem xét và phê duyệt."
+                : "Bạn có chắc chắn muốn hủy đơn hàng này không?"}
+            </p>
+
+            <div className="mt-4">
+              <label
+                htmlFor="cancel-reason"
+                className="block text-xs font-semibold text-gray-700"
+              >
+                Lý do hủy đơn (không bắt buộc):
+              </label>
+              <textarea
+                id="cancel-reason"
+                rows={3}
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="VD: Đặt nhầm món, bận việc gấp..."
+                className="mt-1 w-full rounded-xl border border-gray-300 p-2.5 text-sm focus:border-amber-600 focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-5 flex space-x-3">
+              <button
+                type="button"
+                disabled={isCancelling}
+                onClick={() => setIsCancelModalOpen(false)}
+                className="flex-1 rounded-xl border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                disabled={isCancelling}
+                onClick={handleCancelOrder}
+                className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isCancelling ? "Đang xử lý..." : "Xác nhận hủy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(isFailed || isWaiting) && (
         <ResumeVnpayPayment orderId={order.id} failed={isFailed} expired={remainingSeconds === 0} />

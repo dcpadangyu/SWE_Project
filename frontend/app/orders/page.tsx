@@ -6,31 +6,6 @@ import { apiClient } from "@/utils/apiClient";
 import { authStorage } from "@/utils/authStorage";
 import type { Order, OrderStatus } from "@/types/brewlite";
 
-const MOCK_ORDERS: Order[] = [
-  {
-    id: "mock-order-1042",
-    orderCode: "#1042",
-    userId: "mock-user",
-    status: "PAID",
-    subtotal: 89000,
-    discountAmount: 0,
-    totalAmount: 89000,
-    items: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "mock-order-1041",
-    orderCode: "#1041",
-    userId: "mock-user",
-    status: "READY",
-    subtotal: 65000,
-    discountAmount: 5000,
-    totalAmount: 60000,
-    items: [],
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-];
-
 const STATUS_LABEL: Record<OrderStatus, string> = {
   PENDING: "Chờ thanh toán",
   PAID: "Đã thanh toán",
@@ -88,9 +63,9 @@ export default function OrdersPage() {
       const token = authStorage.getToken();
       if (!token) {
         if (active) {
-          setOrders(MOCK_ORDERS);
+          setOrders([]);
           setError(
-            "Vui lòng đăng nhập để xem lịch sử đơn hàng của bạn. Đang hiển thị dữ liệu mẫu.",
+            "Vui lòng đăng nhập để xem lịch sử đơn hàng của bạn.",
           );
           setLoading(false);
         }
@@ -128,7 +103,7 @@ export default function OrdersPage() {
         }
       } catch (err: unknown) {
         if (active) {
-          setOrders(MOCK_ORDERS);
+          setOrders([]);
           const msg = err instanceof Error ? err.message : "";
           if (msg.includes("đăng nhập") || msg.includes("401")) {
             setError(
@@ -136,7 +111,7 @@ export default function OrdersPage() {
             );
           } else {
             setError(
-              "Không thể tải lịch sử đơn hàng từ máy chủ. Đang hiển thị dữ liệu mẫu.",
+              "Không thể tải lịch sử đơn hàng từ máy chủ. Vui lòng thử lại sau.",
             );
           }
         }
