@@ -8,6 +8,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -28,6 +29,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersService } from './orders.service';
 
 interface AuthenticatedUser {
@@ -220,5 +222,33 @@ export class OrdersController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
     return this.ordersService.findOneForUser(user.id, id);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({
+    summary: 'Cập nhật trạng thái đơn hàng (Dành cho Barista / Quản lý - Task 10.1)',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Mã UUID của đơn hàng' })
+  @ApiOkResponse({
+    description: 'Đơn hàng được chuyển trạng thái thành công theo State Machine.',
+    schema: { example: Order_Example },
+  })
+  @ApiBadRequestResponse({
+    description: 'id không phải UUID hoặc trạng thái mới không hợp lệ.',
+    schema: { example: Error_Example(400, 'Trạng thái đơn hàng không hợp lệ.') },
+  })
+  @ApiConflictResponse({
+    description: 'Chuyển đổi trạng thái vi phạm quy tắc State Machine.',
+    schema: { example: Error_Example(409, 'Không thể chuyển đơn hàng từ PENDING sang COMPLETED.') },
+  })
+  @ApiNotFoundResponse({
+    description: 'Không tìm thấy đơn hàng cần cập nhật.',
+    schema: { example: Error_Example(404, 'Không tìm thấy đơn hàng cần cập nhật.') },
+  })
+  updateStatus(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateOrderStatusDto,
+  ) {
+    return this.ordersService.updateStatus(id, dto.status);
   }
 }

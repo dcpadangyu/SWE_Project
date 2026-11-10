@@ -4,12 +4,13 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderExpirationService } from './order-expiration.service';
 import { orderPaymentDeadline } from './order-payment-window';
+import { assertOrderTransition } from './order-state-machine';
 import {
   assertStockAvailable,
   buildOrderLines,
@@ -183,5 +184,27 @@ export class OrdersService {
       throw new NotFoundException('Không tìm thấy đơn hàng.');
     }
     return this.toResponse(order);
+  }
+
+  /** Cập nhật trạng thái đơn hàng (Dành cho Barista/Admin chuyển trạng thái pha chế hoặc hủy) */
+  async updateStatus(orderId: string, targetStatus: OrderStatus) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: orderWithItems.include,
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng cần cập nhật.');
+    }
+
+    assertOrderTransition(order.status, targetStatus);
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { status: targetStatus },
+      include: orderWithItems.include,
+    });
+
+    return this.toResponse(updated);
   }
 }

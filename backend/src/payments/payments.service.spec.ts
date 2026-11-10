@@ -376,6 +376,113 @@ describe('PaymentsService (Task 8 + Task 10.2 & 10.3)', () => {
         service.processPayment(USER_ID, validKey, validDto),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('Task 10(c) Concurrency Test: 2 khách đồng thời thanh toán mua món cuối cùng (stock = 1, version = 1): đúng 1 người thành công và 1 người nhận CONCURRENCY_CONFLICT, tồn kho không bao giờ âm', async () => {
+      let currentStock = 1;
+      let currentVersion = 1;
+
+      const order1Id = 'order-client-1';
+      const order2Id = 'order-client-2';
+      const user1Id = 'user-1';
+      const user2Id = 'user-2';
+
+      const sharedPrisma = {
+        payment: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findFirst: jest.fn().mockResolvedValue(null),
+          count: jest.fn().mockResolvedValue(0),
+        },
+        order: {
+          findUnique: jest.fn((args: { where: { id: string } }) => {
+            const isO1 = args.where.id === order1Id;
+            return Promise.resolve(mockOrder({
+              id: isO1 ? order1Id : order2Id,
+              userId: isO1 ? user1Id : user2Id,
+              status: OrderStatus.PENDING,
+              items: [{ productId: PRODUCT_ID, quantity: 1 }],
+            }));
+          }),
+        },
+        $transaction: jest.fn(async (callback: (tx: any) => Promise<any>) => {
+          const tx = {
+            $queryRaw: jest.fn().mockResolvedValue([]),
+            order: {
+              findUniqueOrThrow: jest.fn((args: { where: { id: string } }) => {
+                const isO1 = args.where.id === order1Id;
+                return Promise.resolve(mockOrder({
+                  id: isO1 ? order1Id : order2Id,
+                  userId: isO1 ? user1Id : user2Id,
+                  status: OrderStatus.PENDING,
+                  items: [{ productId: PRODUCT_ID, quantity: 1 }],
+                }));
+              }),
+              update: jest.fn().mockImplementation(({ where, data }: { where: { id: string }; data: { status: OrderStatus } }) =>
+                Promise.resolve(mockOrder({ id: where.id, status: data.status })),
+              ),
+            },
+            payment: {
+              findFirst: jest.fn().mockResolvedValue(null),
+              create: jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+                Promise.resolve({
+                  id: 'pay-001',
+                  ...data,
+                  completedAt: new Date(),
+                }),
+              ),
+            },
+            product: {
+              findUnique: jest.fn().mockImplementation(() =>
+                Promise.resolve(mockProduct({ id: PRODUCT_ID, stock: currentStock, version: currentVersion })),
+              ),
+              updateMany: jest.fn().mockImplementation(({ where }: { where: { version: number; stock: { gte: number } } }) => {
+                if (where.version === currentVersion && currentStock >= where.stock.gte) {
+                  currentStock -= 1;
+                  currentVersion += 1;
+                  return Promise.resolve({ count: 1 });
+                }
+                return Promise.resolve({ count: 0 });
+              }),
+            },
+            user: {
+              update: jest.fn().mockImplementation(({ where }: { where: { id: string } }) =>
+                Promise.resolve({ id: where.id, loyaltyPoints: 10 }),
+              ),
+            },
+            loyaltyTransaction: { create: jest.fn() },
+            voucher: { findUnique: jest.fn().mockResolvedValue(null), update: jest.fn() },
+          };
+          return callback(tx);
+        }),
+      };
+
+      const testService = new PaymentsService(sharedPrisma as never);
+
+      const req1 = testService.processPayment(user1Id, 'key-client-1', {
+        orderId: order1Id,
+        paymentMethod: PaymentMethod.E_WALLET,
+      });
+      const req2 = testService.processPayment(user2Id, 'key-client-2', {
+        orderId: order2Id,
+        paymentMethod: PaymentMethod.E_WALLET,
+      });
+
+      const results = await Promise.allSettled([req1, req2]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+
+      const rejectionReason = (rejected[0] as PromiseRejectedResult).reason;
+      expect(rejectionReason).toBeInstanceOf(ConflictException);
+      expect((rejectionReason as ConflictException).getResponse()).toMatchObject({
+        code: 'CONCURRENCY_CONFLICT',
+      });
+
+      expect(currentStock).toBe(0);
+      expect(currentVersion).toBe(2);
+    });
   });
 
   describe('Xử lý Thất bại và Giới hạn 3 lần thử (AC-13.3)', () => {

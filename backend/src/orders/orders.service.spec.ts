@@ -4,7 +4,7 @@ import {
   NotFoundException,
   ValidationPipe,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrdersService } from './orders.service';
 
@@ -67,6 +67,8 @@ function makeService() {
     order: {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
     },
     $transaction: jest.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
   };
@@ -330,6 +332,45 @@ describe('OrdersService.findOneForUser', () => {
     expect((err1 as NotFoundException).message).toBe(
       (err2 as NotFoundException).message,
     );
+  });
+
+  describe('updateStatus (Task 10.1 Order State Machine)', () => {
+    it('chuyển trạng thái hợp lệ từ PAID sang PREPARING thành công', async () => {
+      const { service, prisma } = makeService();
+      const current = storedOrder({ status: OrderStatus.PAID });
+      const updated = storedOrder({ status: OrderStatus.PREPARING });
+      prisma.order.findUnique.mockResolvedValue(current);
+      prisma.order.update.mockResolvedValue(updated);
+
+      const result = await service.updateStatus('order-1', OrderStatus.PREPARING);
+
+      expect(result.status).toBe(OrderStatus.PREPARING);
+      expect(prisma.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { status: OrderStatus.PREPARING },
+        include: expect.any(Object),
+      });
+    });
+
+    it('chặn chuyển trạng thái sai quy tắc State Machine (PENDING -> COMPLETED) ném ConflictException', async () => {
+      const { service, prisma } = makeService();
+      const current = storedOrder({ status: OrderStatus.PENDING });
+      prisma.order.findUnique.mockResolvedValue(current);
+
+      await expect(
+        service.updateStatus('order-1', OrderStatus.COMPLETED),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('ném NotFoundException nếu đơn hàng cần cập nhật không tồn tại', async () => {
+      const { service, prisma } = makeService();
+      prisma.order.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateStatus('non-existent', OrderStatus.PREPARING),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 });
 
