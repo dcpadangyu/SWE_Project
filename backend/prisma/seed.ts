@@ -257,6 +257,184 @@ async function main() {
         role: 'CUSTOMER',
       },
     });
+
+    // 5. Nạp tài khoản Staff / Barista kiểm thử
+    await tx.user.upsert({
+      where: { email: 'staff@gmail.com' },
+      create: {
+        email: 'staff@gmail.com',
+        passwordHash: defaultPasswordHash,
+        fullName: 'Nhân viên Pha chế BrewLite',
+        role: 'BARISTA',
+        loyaltyPoints: 0,
+      },
+      update: {
+        passwordHash: defaultPasswordHash,
+        fullName: 'Nhân viên Pha chế BrewLite',
+        role: 'BARISTA',
+      },
+    });
+
+    // 6. Nạp Nguyên liệu ban đầu (Ingredients)
+    const initialIngredients = [
+      { id: 'ing-coffee', name: 'Hạt cà phê Robusta', unit: 'g', stock: 10000, minThreshold: 500 },
+      { id: 'ing-condensed-milk', name: 'Sữa đặc Ngôi Sao Phương Nam', unit: 'ml', stock: 5000, minThreshold: 300 },
+      { id: 'ing-fresh-milk', name: 'Sữa tươi không đường Barista', unit: 'ml', stock: 5000, minThreshold: 400 },
+      { id: 'ing-sugar', name: 'Đường kính trắng', unit: 'g', stock: 3000, minThreshold: 200 },
+      { id: 'ing-peach-tea', name: 'Trà đào Cozy', unit: 'g', stock: 2000, minThreshold: 100 },
+      { id: 'ing-peach-fruit', name: 'Đào ngâm miếng', unit: 'cái', stock: 100, minThreshold: 10 },
+      { id: 'ing-lychee', name: 'Hương vải & vải ngâm', unit: 'g', stock: 1500, minThreshold: 100 },
+      { id: 'ing-lotus-tea', name: 'Bột trà sen cao cấp', unit: 'g', stock: 1500, minThreshold: 100 },
+      { id: 'ing-lemon', name: 'Chanh tươi', unit: 'g', stock: 1000, minThreshold: 50 },
+      { id: 'ing-chocolate', name: 'Chocolate cao cấp', unit: 'g', stock: 1000, minThreshold: 50 },
+    ];
+
+    for (const ing of initialIngredients) {
+      await tx.ingredient.upsert({
+        where: { id: ing.id },
+        create: ing,
+        update: {
+          name: ing.name,
+          unit: ing.unit,
+          stock: ing.stock,
+          minThreshold: ing.minThreshold,
+        },
+      });
+    }
+
+    // 7. Nạp Công thức định lượng theo Size S, M, L cho các đồ uống (Recipe Items)
+    // Map productId theo index của drinks (20000000-0000-4000-8000-000000000001 -> 10)
+    const getProdId = (idx: number) => `20000000-0000-4000-8000-${String(idx).padStart(12, '0')}`;
+
+    const recipes = [
+      // 1: Cà phê sữa: Cà phê + Sữa đặc
+      { prodIdx: 1, ingId: 'ing-coffee', size: 'S', amount: 20 },
+      { prodIdx: 1, ingId: 'ing-condensed-milk', size: 'S', amount: 30 },
+      { prodIdx: 1, ingId: 'ing-coffee', size: 'M', amount: 25 },
+      { prodIdx: 1, ingId: 'ing-condensed-milk', size: 'M', amount: 40 },
+      { prodIdx: 1, ingId: 'ing-coffee', size: 'L', amount: 35 },
+      { prodIdx: 1, ingId: 'ing-condensed-milk', size: 'L', amount: 50 },
+
+      // 2: Americano: Cà phê
+      { prodIdx: 2, ingId: 'ing-coffee', size: 'S', amount: 20 },
+      { prodIdx: 2, ingId: 'ing-coffee', size: 'M', amount: 25 },
+      { prodIdx: 2, ingId: 'ing-coffee', size: 'L', amount: 35 },
+
+      // 3: Cappuccino: Cà phê + Sữa tươi
+      { prodIdx: 3, ingId: 'ing-coffee', size: 'S', amount: 20 },
+      { prodIdx: 3, ingId: 'ing-fresh-milk', size: 'S', amount: 60 },
+      { prodIdx: 3, ingId: 'ing-coffee', size: 'M', amount: 25 },
+      { prodIdx: 3, ingId: 'ing-fresh-milk', size: 'M', amount: 80 },
+      { prodIdx: 3, ingId: 'ing-coffee', size: 'L', amount: 35 },
+      { prodIdx: 3, ingId: 'ing-fresh-milk', size: 'L', amount: 100 },
+
+      // 4: Trà đào: Trà đào + Đường + Đào ngâm miếng
+      { prodIdx: 4, ingId: 'ing-peach-tea', size: 'S', amount: 15 },
+      { prodIdx: 4, ingId: 'ing-sugar', size: 'S', amount: 20 },
+      { prodIdx: 4, ingId: 'ing-peach-fruit', size: 'S', amount: 2 },
+      { prodIdx: 4, ingId: 'ing-peach-tea', size: 'M', amount: 20 },
+      { prodIdx: 4, ingId: 'ing-sugar', size: 'M', amount: 25 },
+      { prodIdx: 4, ingId: 'ing-peach-fruit', size: 'M', amount: 3 },
+      { prodIdx: 4, ingId: 'ing-peach-tea', size: 'L', amount: 25 },
+      { prodIdx: 4, ingId: 'ing-sugar', size: 'L', amount: 35 },
+      { prodIdx: 4, ingId: 'ing-peach-fruit', size: 'L', amount: 4 },
+
+      // 5: Bạc xỉu: Cà phê (ít) + Sữa đặc (nhiều) + Sữa tươi
+      { prodIdx: 5, ingId: 'ing-coffee', size: 'S', amount: 10 },
+      { prodIdx: 5, ingId: 'ing-condensed-milk', size: 'S', amount: 40 },
+      { prodIdx: 5, ingId: 'ing-fresh-milk', size: 'S', amount: 30 },
+      { prodIdx: 5, ingId: 'ing-coffee', size: 'M', amount: 15 },
+      { prodIdx: 5, ingId: 'ing-condensed-milk', size: 'M', amount: 50 },
+      { prodIdx: 5, ingId: 'ing-fresh-milk', size: 'M', amount: 40 },
+      { prodIdx: 5, ingId: 'ing-coffee', size: 'L', amount: 20 },
+      { prodIdx: 5, ingId: 'ing-condensed-milk', size: 'L', amount: 60 },
+      { prodIdx: 5, ingId: 'ing-fresh-milk', size: 'L', amount: 50 },
+
+      // 6: Latte: Cà phê + Sữa tươi
+      { prodIdx: 6, ingId: 'ing-coffee', size: 'S', amount: 18 },
+      { prodIdx: 6, ingId: 'ing-fresh-milk', size: 'S', amount: 80 },
+      { prodIdx: 6, ingId: 'ing-coffee', size: 'M', amount: 22 },
+      { prodIdx: 6, ingId: 'ing-fresh-milk', size: 'M', amount: 100 },
+      { prodIdx: 6, ingId: 'ing-coffee', size: 'L', amount: 28 },
+      { prodIdx: 6, ingId: 'ing-fresh-milk', size: 'L', amount: 130 },
+
+      // 7: Mocha: Cà phê + Chocolate + Sữa tươi
+      { prodIdx: 7, ingId: 'ing-coffee', size: 'S', amount: 18 },
+      { prodIdx: 7, ingId: 'ing-chocolate', size: 'S', amount: 15 },
+      { prodIdx: 7, ingId: 'ing-fresh-milk', size: 'S', amount: 60 },
+      { prodIdx: 7, ingId: 'ing-coffee', size: 'M', amount: 22 },
+      { prodIdx: 7, ingId: 'ing-chocolate', size: 'M', amount: 20 },
+      { prodIdx: 7, ingId: 'ing-fresh-milk', size: 'M', amount: 80 },
+      { prodIdx: 7, ingId: 'ing-coffee', size: 'L', amount: 28 },
+      { prodIdx: 7, ingId: 'ing-chocolate', size: 'L', amount: 25 },
+      { prodIdx: 7, ingId: 'ing-fresh-milk', size: 'L', amount: 100 },
+
+      // 8: Trà vải: Hương vải + Đường
+      { prodIdx: 8, ingId: 'ing-lychee', size: 'S', amount: 20 },
+      { prodIdx: 8, ingId: 'ing-sugar', size: 'S', amount: 20 },
+      { prodIdx: 8, ingId: 'ing-lychee', size: 'M', amount: 30 },
+      { prodIdx: 8, ingId: 'ing-sugar', size: 'M', amount: 25 },
+      { prodIdx: 8, ingId: 'ing-lychee', size: 'L', amount: 40 },
+      { prodIdx: 8, ingId: 'ing-sugar', size: 'L', amount: 30 },
+
+      // 9: Trà chanh: Chanh + Đường
+      { prodIdx: 9, ingId: 'ing-lemon', size: 'S', amount: 15 },
+      { prodIdx: 9, ingId: 'ing-sugar', size: 'S', amount: 20 },
+      { prodIdx: 9, ingId: 'ing-lemon', size: 'M', amount: 20 },
+      { prodIdx: 9, ingId: 'ing-sugar', size: 'M', amount: 25 },
+      { prodIdx: 9, ingId: 'ing-lemon', size: 'L', amount: 30 },
+      { prodIdx: 9, ingId: 'ing-sugar', size: 'L', amount: 35 },
+
+      // 10: Trà sen: Bột trà sen + Đường
+      { prodIdx: 10, ingId: 'ing-lotus-tea', size: 'S', amount: 15 },
+      { prodIdx: 10, ingId: 'ing-sugar', size: 'S', amount: 15 },
+      { prodIdx: 10, ingId: 'ing-lotus-tea', size: 'M', amount: 20 },
+      { prodIdx: 10, ingId: 'ing-sugar', size: 'M', amount: 20 },
+      { prodIdx: 10, ingId: 'ing-lotus-tea', size: 'L', amount: 25 },
+      { prodIdx: 10, ingId: 'ing-sugar', size: 'L', amount: 25 },
+    ];
+
+    for (const r of recipes) {
+      const prodId = getProdId(r.prodIdx);
+      const recipeId = `rec-${r.prodIdx}-${r.ingId}-${r.size}`;
+      await tx.recipeItem.upsert({
+        where: { id: recipeId },
+        create: {
+          id: recipeId,
+          productId: prodId,
+          ingredientId: r.ingId,
+          size: r.size as any,
+          amount: r.amount,
+        },
+        update: {
+          amount: r.amount,
+        },
+      });
+    }
+
+    // 8. Tự động tính toán số ly tối đa (Bottleneck formula) và cập nhật Product.stock
+    for (let i = 1; i <= 10; i++) {
+      const prodId = getProdId(i);
+      const prodRecipes = recipes.filter((r) => r.prodIdx === i && r.size === 'M'); // Lấy size M chuẩn
+      if (prodRecipes.length === 0) continue;
+
+      let maxCups = 999999;
+      for (const pr of prodRecipes) {
+        const ing = initialIngredients.find((ing) => ing.id === pr.ingId);
+        if (ing) {
+          const cups = Math.floor(ing.stock / pr.amount);
+          if (cups < maxCups) maxCups = cups;
+        }
+      }
+
+      await tx.product.update({
+        where: { id: prodId },
+        data: {
+          stock: maxCups === 999999 ? 0 : maxCups,
+          isAvailable: maxCups > 0,
+        },
+      });
+    }
   }); // <--- ĐÓNG TRANSACTION Ở ĐÂY LÀ ĐÚNG
 
   console.log('Đã seed 2 danh mục, 10 sản phẩm, 3 voucher và 1 tài khoản khách hàng mặc định (customer@gmail.com).');

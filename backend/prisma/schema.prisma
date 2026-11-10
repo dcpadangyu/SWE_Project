@@ -40,7 +40,8 @@ model Product {
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
 
-  orderItems OrderItem[]
+  orderItems  OrderItem[]
+  recipeItems RecipeItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -67,6 +68,7 @@ model User {
   // Quan hệ: Một user có thể có nhiều đơn hàng và nhiều giao dịch điểm thưởng
   orders              Order[]
   loyaltyTransactions LoyaltyTransaction[]
+  refundRequests      RefundRequest[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -112,6 +114,7 @@ model Order {
   items               OrderItem[]
   payments            Payment[]
   loyaltyTransactions LoyaltyTransaction[]
+  refundRequest       RefundRequest?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -242,3 +245,93 @@ model LoyaltyTransaction {
 
   @@map("loyalty_transactions")
 }
+
+// 14. Model Nguyên liệu (Ingredients)
+model Ingredient {
+  id           String       @id @default(uuid())
+  name         String       @unique
+  unit         String       // "g", "ml", "cái"
+  stock        Decimal      @default(0) @db.Decimal(10, 2)
+  minThreshold Decimal      @default(100) @map("min_threshold") @db.Decimal(10, 2)
+
+  recipes      RecipeItem[]
+
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@map("ingredients")
+}
+
+// 15. Model Công thức định lượng theo sản phẩm và kích thước (Recipes)
+model RecipeItem {
+  id           String     @id @default(uuid())
+  productId    String     @map("product_id")
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  ingredientId String     @map("ingredient_id")
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  size         Size
+  amount       Decimal    @db.Decimal(10, 2)
+
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@unique([productId, ingredientId, size])
+  @@map("recipe_items")
+}
+
+// 16. Model Yêu cầu hoàn tiền khi hủy đơn PAID (RefundRequest)
+enum RefundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model RefundRequest {
+  id          String              @id @default(uuid())
+  orderId     String              @unique @map("order_id")
+  order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  userId      String              @map("user_id")
+  user        User                @relation(fields: [userId], references: [id])
+
+  amount      Decimal             @db.Decimal(10, 2)
+  reason      String?
+  status      RefundRequestStatus @default(PENDING)
+
+  processedBy String?             @map("processed_by")
+  processedAt DateTime?           @map("processed_at")
+
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  @@map("refund_requests")
+}
+
+// 17. Lịch sử biến động kho nguyên liệu (Audit Log)
+enum IngredientLogAction {
+  CREATE
+  RESTOCK
+  UPDATE
+  DELETE
+  ORDER_DEDUCT
+}
+
+model IngredientAuditLog {
+  id             String              @id @default(uuid())
+  ingredientId   String?             @map("ingredient_id")
+  ingredientName String              @map("ingredient_name")
+  action         IngredientLogAction
+  changeAmount   Decimal?            @map("change_amount") @db.Decimal(10, 2)
+  previousStock  Decimal?            @map("previous_stock") @db.Decimal(10, 2)
+  newStock       Decimal?            @map("new_stock") @db.Decimal(10, 2)
+  unit           String
+  reason         String?
+  performedBy    String?             @map("performed_by")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("ingredient_audit_logs")
+}
+
